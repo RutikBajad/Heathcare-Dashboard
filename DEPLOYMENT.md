@@ -29,7 +29,7 @@ Set these environment variables in the hosting provider's secret/configuration s
 | `HOSPITAL_HOURS` | Optional visiting/operating hours |
 | `PORT` | Set by the hosting provider |
 
-Set both bootstrap admin credentials before deployment. The account is created on the first login/identity request when it does not already exist; changing these variables does not reset an existing account password. Patients can self-register. Administrators create doctor, staff, and additional admin accounts from Settings; doctor accounts must be linked to a doctor directory record. Administrators can narrow each account's visible pages within that role's permissions.
+Set both bootstrap admin credentials before deployment. The account is created on the first login/identity request when it does not already exist; changing these variables does not reset an existing account password. Patients can self-register. Administrators create staff accounts from the Staff or Add records pages, and create doctor or additional administrator accounts from Settings; doctor accounts must be linked to a doctor directory record. Administrators can narrow each account's visible pages within that role's permissions.
 
 Restrict the MongoDB database user to the application database and allow network access only from the backend host where possible. Never commit `.env` or put database credentials in frontend variables.
 
@@ -42,9 +42,20 @@ npm ci
 npm run build
 ```
 
+Use Node.js `^20.19.0` or `>=22.12.0` for the Vite 8 build.
+
 Publish `frontend/dist`. Configure `VITE_API_URL` to the backend's base URL **without** a trailing slash or `/api` (for example, `https://healthpilot-api.example.com`). Vite embeds this value into the built JavaScript, so set it before building. For a same-origin deployment that reverse-proxies `/api` and `/health` to the backend, leave `VITE_API_URL` unset.
 
 Add the frontend's exact origin to the backend's `FRONTEND_ORIGINS`; do not use `*`. Rebuild the frontend after changing `VITE_API_URL`.
+
+## Demo deployment checklist
+
+1. Create a hosted MongoDB database and a database user limited to that database. Configure the provider's network allowlist for the backend host.
+2. Deploy the backend from the repository root using the included `Procfile`, install `backend/requirements.txt`, and set the backend environment variables above. Use a unique bootstrap administrator password and keep it in the provider's secret store.
+3. Deploy `frontend/dist` as a static site. Set `VITE_API_URL` to the backend base URL before building, or configure the host to serve the frontend and reverse-proxy `/api` and `/health` to the backend.
+4. Configure the static host's SPA fallback so application routes return `index.html`. Add only the deployed frontend origin to `FRONTEND_ORIGINS`, then rebuild/redeploy the frontend if its API URL changes.
+5. Visit the backend `/health` endpoint, sign in as the bootstrap administrator, and verify the dashboard and Staff directory load. Use only disposable synthetic records while testing role-specific access.
+6. Confirm the deployed site uses HTTPS and that no `.env` file, database URI, or bootstrap password is included in the frontend build or repository.
 
 ## Before hosting with real users
 

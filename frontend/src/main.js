@@ -592,32 +592,47 @@ function renderStaff() {
     <div class="page-header">
       <div>
         <h1 class="page-title">Staff</h1>
-        <p class="page-subtitle">Staff accounts and their linked staff profiles.</p>
+        <p class="page-subtitle">Manage staff accounts, contact details, and linked profiles.</p>
       </div>
       <button class="primary-button" type="button" data-action="add-record" data-record-type="staff"><span>${renderIcon('plus')}</span> Add staff</button>
     </div>
     <section class="panel">
       <div class="panel-header">
         <h2 class="panel-title">Staff directory</h2>
-        <span class="value-pill">${staffAccounts.length} staff</span>
+        <span class="value-pill">${staffAccounts.length} ${staffAccounts.length === 1 ? 'staff member' : 'staff members'}</span>
       </div>
       <div class="doctor-grid">
         ${staffAccounts.map((account) => {
           const profile = state.users.find((user) => user.accountId === account.id);
+          const initials = account.name.trim().split(/\s+/).map((part) => part[0]).slice(0, 2).join('');
+          const pageAccessCount = (account.allowedPages || rolePages.staff).length;
           return `
-            <article class="doctor-card">
-              <div class="doctor-info">
-                <div class="doctor-avatar">${escapeHtml(account.name.split(' ').map((part) => part[0]).slice(0, 2).join(''))}</div>
+            <article class="doctor-card staff-card">
+              <div class="doctor-info staff-card-heading">
+                <div class="doctor-avatar staff-avatar" aria-hidden="true">${escapeHtml(initials)}</div>
                 <div>
-                  <strong>${escapeHtml(account.name)}</strong>
-                  <div class="muted">Staff member</div>
+                  <h3>${escapeHtml(account.name)}</h3>
+                  <span class="value-pill">Staff member</span>
                 </div>
               </div>
-              <div class="mini-table" style="margin-top: 1rem;">
-                <tr><td>Email</td><td>${escapeHtml(account.email)}</td></tr>
-                <tr><td>Account ID</td><td>${escapeHtml(account.id)}</td></tr>
-                <tr><td>Profile</td><td>${profile ? escapeHtml(profile.id) : 'Linked to account'}</td></tr>
-              </div>
+              <dl class="staff-details">
+                <div>
+                  <dt>Email</dt>
+                  <dd><a href="mailto:${escapeHtml(account.email)}">${escapeHtml(account.email)}</a></dd>
+                </div>
+                <div>
+                  <dt>Account ID</dt>
+                  <dd class="staff-identifier">${escapeHtml(account.id)}</dd>
+                </div>
+                <div>
+                  <dt>Staff profile</dt>
+                  <dd>${profile ? escapeHtml(profile.id) : 'Profile not linked'}</dd>
+                </div>
+                <div>
+                  <dt>Page access</dt>
+                  <dd>${pageAccessCount} pages</dd>
+                </div>
+              </dl>
             </article>
           `;
         }).join('') || '<div class="placeholder-box">No staff accounts have been added yet.</div>'}
@@ -1105,7 +1120,7 @@ function renderSidebar() {
       <nav class="nav-list" aria-label="Sidebar navigation">
         ${navItems.filter((item) => userCanAccess(item.id)).map((item) => `
           <button class="nav-button ${state.currentPage === item.id ? 'active' : ''}" data-page="${item.id}" type="button">
-            <span>${renderIcon(item.id)}</span>
+            <span>${renderIcon(item.id === 'staff' ? 'users' : item.id)}</span>
             <span>${item.label}</span>
           </button>
         `).join('')}
