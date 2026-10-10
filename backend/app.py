@@ -202,6 +202,7 @@ def public_account(account):
         'name': account['name'],
         'email': account['email'],
         'role': account['role'],
+        'active': account.get('active', True),
         'patientId': account.get('patientId'),
         'doctorName': account.get('doctorName'),
         'allowedPages': account.get('allowedPages', list(ROLE_PAGES[account['role']])),
@@ -231,6 +232,7 @@ def ensure_bootstrap_admin():
         'email': email,
         'passwordHash': generate_password_hash(password, method='scrypt'),
         'role': 'admin',
+        'active': True,
         'allowedPages': list(ROLE_PAGES['admin']),
         'createdAt': utc_now(),
     })
@@ -272,6 +274,9 @@ def authenticate_api_request():
     account = database.accounts.find_one({'id': session['userId']})
     if not account:
         return jsonify({'error': 'This account is no longer available.'}), 401
+    if account.get('active', True) is False:
+        database.sessions.delete_one({'tokenHash': sha256(token.encode('utf-8')).hexdigest()})
+        return jsonify({'error': 'This account has been deactivated. Contact an administrator.'}), 401
     g.current_user = migrate_legacy_admin_pages(account)
 
     endpoint = request.endpoint
@@ -284,6 +289,7 @@ def authenticate_api_request():
         ('update_patient', 'PUT'): 'patients',
         ('doctors_api', 'GET'): 'doctors',
         ('doctors_api', 'POST'): 'add-record',
+        ('update_doctor', 'PUT'): 'doctors',
         ('diseases_api', 'GET'): 'diseases',
         ('diseases_api', 'POST'): 'diseases',
         ('appointments_api', 'GET'): 'appointments',
@@ -321,6 +327,7 @@ def authenticate_api_request():
         'hospital_info_api': {'patient', 'admin'},
         'patients_api': {'doctor', 'staff', 'admin'},
         'update_patient': {'doctor', 'admin'},
+        'update_doctor': {'admin'},
         'doctors_api': {'patient', 'staff', 'admin'},
         'diseases_api': {'doctor', 'staff', 'admin'},
         'appointments_api': {'patient', 'doctor', 'staff', 'admin'},
@@ -427,6 +434,7 @@ def auth_register():
         'lastVisit': datetime.now().date().isoformat(),
         'risk': 'Low',
         'conditions': [],
+        'active': True,
         'createdAt': utc_now(),
     }
     account = {
@@ -435,6 +443,7 @@ def auth_register():
         'email': email,
         'passwordHash': generate_password_hash(password, method='scrypt'),
         'role': 'patient',
+        'active': True,
         'patientId': patient_id,
         'allowedPages': list(ROLE_PAGES['patient']),
         'createdAt': utc_now(),
@@ -461,6 +470,8 @@ def auth_login():
     account = database.accounts.find_one({'email': email.lower()})
     if not account or not check_password_hash(account['passwordHash'], password):
         return jsonify({'error': 'Email or password is incorrect.'}), 401
+    if account.get('active', True) is False:
+        return jsonify({'error': 'This account has been deactivated. Contact an administrator.'}), 403
     account = migrate_legacy_admin_pages(account)
     return jsonify({'token': create_session(account), 'user': public_account(account)})
 
@@ -520,6 +531,7 @@ def auth_accounts():
         'email': email,
         'passwordHash': generate_password_hash(password, method='scrypt'),
         'role': role,
+        'active': True,
         'doctorName': doctor_name if role == 'doctor' else None,
         'allowedPages': list(ROLE_PAGES[role]),
         'createdAt': utc_now(),
@@ -532,6 +544,7 @@ def auth_accounts():
             'name': name,
             'email': email,
             'role': 'Staff',
+            'active': True,
             'createdAt': utc_now(),
         })
     return jsonify(public_account(account)), 201
@@ -545,17 +558,40 @@ def update_account_permissions(account_id):
     payload, error = json_body()
     if error:
         return error
-    allowed_pages = payload.get('allowedPages')
-    if not isinstance(allowed_pages, list) or any(page not in PAGE_IDS for page in allowed_pages):
-        return jsonify({'error': 'allowedPages must be a list of valid page identifiers.'}), 400
     account = database.accounts.find_one({'id': account_id})
     if not account:
         return jsonify({'error': 'Account was not found.'}), 404
-    if not set(allowed_pages).issubset(ROLE_PAGES[account['role']]):
-        return jsonify({'error': 'Page access cannot exceed the permissions assigned to the account role.'}), 400
-    if account['role'] == 'admin' and 'settings' not in allowed_pages:
-        return jsonify({'error': 'Administrator accounts must retain Settings access to manage accounts.'}), 400
-    database.accounts.update_one({'id': account_id}, {'$set': {'allowedPages': allowed_pages}})
+    updates = {}
+    if 'allowedPages' in payload:
+        allowed_pages = payload['allowedPages']
+        if not isinstance(allowed_pages, list) or any(page not in PAGE_IDS for page in allowed_pages):
+            return jsonify({'error': 'allowedPages must be a list of valid page identifiers.'}), 400
+        if not set(allowed_pages).issubset(ROLE_PAGES[account['role']]):
+            return jsonify({'error': 'Page access cannot exceed the permissions assigned to the account role.'}), 400
+        if account['role'] == 'admin' and 'settings' not in allowed_pages:
+            return jsonify({'error': 'Administrator accounts must retain Settings access to manage accounts.'}), 400
+        updates['allowedPages'] = allowed_pages
+    if 'active' in payload:
+        if not isinstance(payload['active'], bool):
+            return jsonify({'error': 'active must be a boolean.'}), 400
+        if account_id == g.current_user['id'] and not payload['active']:
+            return jsonify({'error': 'You cannot deactivate your own account.'}), 400
+        if account['role'] == 'admin' and account.get('active', True) and not payload['active']:
+            active_admins = database.accounts.count_documents({'role': 'admin', 'active': {'$ne': False}})
+            if active_admins <= 1:
+                return jsonify({'error': 'The last active administrator account cannot be deactivated.'}), 400
+        updates['active'] = payload['active']
+    if not updates:
+        return jsonify({'error': 'Provide valid page permissions or an active status to update.'}), 400
+    database.accounts.update_one({'id': account_id}, {'$set': updates})
+    if 'active' in updates:
+        database.users.update_many({'accountId': account_id}, {'$set': {'active': updates['active']}})
+        if account.get('patientId'):
+            database.patients.update_one({'id': account['patientId']}, {'$set': {'active': updates['active']}})
+        if account.get('doctorName'):
+            database.doctors.update_one({'name': account['doctorName']}, {'$set': {'active': updates['active']}})
+        if not updates['active']:
+            database.sessions.delete_many({'userId': account_id})
     return jsonify(public_account(database.accounts.find_one({'id': account_id})))
 
 
@@ -642,6 +678,7 @@ def patients_api():
         'lastVisit': required_text(payload, 'lastVisit') or datetime.now().date().isoformat(),
         'risk': payload.get('risk', 'Low'),
         'conditions': payload.get('conditions', []),
+        'active': True,
         'createdAt': utc_now(),
     }
     if not isinstance(patient['conditions'], list) or any(not isinstance(value, str) for value in patient['conditions']):
@@ -661,6 +698,8 @@ def update_patient(patient_id):
     if error:
         return error
     allowed_fields = {'name', 'age', 'city', 'gender', 'bloodGroup', 'status', 'lastVisit', 'risk', 'conditions'}
+    if g.current_user['role'] == 'admin':
+        allowed_fields.add('active')
     if g.current_user['role'] == 'doctor':
         allowed_fields = {'status', 'lastVisit', 'risk', 'conditions'}
     updates = {key: payload[key] for key in allowed_fields if key in payload}
@@ -682,9 +721,17 @@ def update_patient(patient_id):
         return jsonify({'error': 'Conditions must be a list of disease identifiers.'}), 400
     if 'conditions' in updates and database.diseases.count_documents({'id': {'$in': updates['conditions']}}) != len(set(updates['conditions'])):
         return jsonify({'error': 'One or more selected diseases do not exist.'}), 400
+    if 'active' in updates and not isinstance(updates['active'], bool):
+        return jsonify({'error': 'active must be a boolean.'}), 400
     result = database.patients.update_one({'id': patient_id}, {'$set': updates})
     if result.matched_count == 0:
         return jsonify({'error': 'Patient was not found.'}), 404
+    if 'active' in updates:
+        patient_account = database.accounts.find_one({'patientId': patient_id})
+        if patient_account:
+            database.accounts.update_one({'id': patient_account['id']}, {'$set': {'active': updates['active']}})
+            if not updates['active']:
+                database.sessions.delete_many({'userId': patient_account['id']})
     return jsonify(database.patients.find_one({'id': patient_id}, {'_id': 0}))
 
 
@@ -710,10 +757,33 @@ def doctors_api():
         'department': department,
         'city': required_text(payload, 'city') or '',
         'availability': payload.get('availability', 'Available'),
+        'active': True,
         'createdAt': utc_now(),
     }
     database.doctors.insert_one(doctor)
     return jsonify(database.doctors.find_one({'id': doctor['id']}, {'_id': 0})), 201
+
+
+@app.route('/api/doctors/<doctor_id>', methods=['PUT', 'OPTIONS'])
+def update_doctor(doctor_id):
+    if request.method == 'OPTIONS':
+        return '', 204
+    ensure_database()
+    payload, error = json_body()
+    if error:
+        return error
+    active = payload.get('active')
+    if not isinstance(active, bool):
+        return jsonify({'error': 'active must be a boolean.'}), 400
+    doctor = database.doctors.find_one({'id': doctor_id})
+    if not doctor:
+        return jsonify({'error': 'Doctor was not found.'}), 404
+    database.doctors.update_one({'id': doctor_id}, {'$set': {'active': active}})
+    linked_accounts = list(database.accounts.find({'doctorName': doctor['name']}, {'_id': 0, 'id': 1}))
+    database.accounts.update_many({'doctorName': doctor['name']}, {'$set': {'active': active}})
+    if not active:
+        database.sessions.delete_many({'userId': {'$in': [account['id'] for account in linked_accounts]}})
+    return jsonify(database.doctors.find_one({'id': doctor_id}, {'_id': 0}))
 
 
 @app.route('/api/diseases', methods=['GET', 'POST', 'OPTIONS'])
@@ -898,6 +968,8 @@ def search_api():
         if role in {'doctor', 'staff', 'admin'} and 'diseases' in allowed_pages else [],
         'users': records('users', {'$or': [{'name': pattern}, {'email': pattern}, {'role': pattern}]})
         if role == 'admin' and 'settings' in allowed_pages else [],
+        'staff': records('accounts', {'role': 'staff', '$or': [{'name': pattern}, {'email': pattern}, {'id': pattern}, {'role': pattern}]})
+        if role == 'admin' and ('staff' in allowed_pages or 'settings' in allowed_pages) else [],
     }
     if role == 'patient':
         result_sets['appointments'] = []

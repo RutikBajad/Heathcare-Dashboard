@@ -14,6 +14,7 @@ const state = {
   currentPage: 'overview',
   doctorFilter: 'all',
   appointmentFilter: 'all',
+  analyticsRange: 'quarter',
   assessmentTab: 'heart',
   recordType: 'patient',
   formFeedback: '',
@@ -36,6 +37,16 @@ const state = {
   searchResults: null,
   searchFeedback: '',
   selectedRecord: null,
+  patientSearch: '',
+  patientRiskFilter: 'all',
+  patientActivityFilter: 'active',
+  doctorSearch: '',
+  doctorDepartmentFilter: 'all',
+  staffSearch: '',
+  staffActivityFilter: 'active',
+  patientProfileEditing: false,
+  chatOpen: false,
+  chatMessages: [],
   alertsOpen: false,
   dataError: '',
   dataNotice: '',
@@ -125,6 +136,7 @@ function renderIcon(iconName) {
     analytics: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M7 14l3-3 3 2 5-7"/><path d="M18 6h2v2"/></svg>',
     'ml-assessment': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V6a3 3 0 1 1 6 0v5"/><path d="M5 12h14"/><rect x="4" y="12" width="16" height="8" rx="2"/></svg>',
     'model-performance': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15h4l2-6 4 10 2-4h4"/></svg>',
+    chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8Z"/></svg>',
     settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-.4-1.1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.87.34l-.06.06A2 2 0 1 1 4.34 17l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.8a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4 8.6a1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2 2 0 1 1 6.99 3.8l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V2.8a2 2 0 1 1 4 0v.09c0 .4.14.79.4 1.1.26.3.64.5 1 .6a1.7 1.7 0 0 0 1.87-.34l.06-.06A2 2 0 1 1 19.66 7l-.06.06A1.7 1.7 0 0 0 19.4 9c.25.28.4.67.4 1.1v.09a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.1.4 1.7 1.7 0 0 0-.6 1Z"/></svg>',
     search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6"/><path d="m16 16 5 5"/></svg>',
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
@@ -162,7 +174,12 @@ const recordTypeLabels = {
   appointments: 'Appointment',
   diseases: 'Disease',
   users: 'User profile',
+  staff: 'Staff',
 };
+
+function isActive(record) {
+  return record.active !== false;
+}
 
 function formatRecordField(value) {
   if (Array.isArray(value)) return value.length ? value.map(formatRecordField).join(', ') : 'None';
@@ -241,6 +258,151 @@ function renderRecordDetail() {
   `;
 }
 
+function renderPatientProfile() {
+  const patient = state.selectedRecord?.record;
+  if (!patient) {
+    return '<section class="panel"><p class="muted">Choose a patient from the directory to view their profile.</p></section>';
+  }
+
+  const canEdit = ['doctor', 'admin'].includes(state.currentUser.role);
+  const canManageStatus = state.currentUser.role === 'admin';
+  const conditions = Array.isArray(patient.conditions) ? patient.conditions : [];
+
+  if (state.patientProfileEditing && canEdit) {
+    const clinicalFields = `
+      <div class="form-field"><label for="profile-status">Status</label><select id="profile-status" name="status">${['Stable', 'Monitoring', 'Critical'].map((value) => `<option ${patient.status === value ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+      <div class="form-field"><label for="profile-risk">Risk level</label><select id="profile-risk" name="risk">${['Low', 'Medium', 'High'].map((value) => `<option ${patient.risk === value ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+      <div class="form-field"><label for="profile-last-visit">Last visit</label><input id="profile-last-visit" name="lastVisit" type="date" value="${escapeHtml(patient.lastVisit || '')}" /></div>
+      <fieldset class="condition-picker">
+        <legend>Conditions</legend>
+        <details>
+          <summary>${conditions.length ? `${conditions.length} selected` : 'Choose conditions'}</summary>
+          <div class="condition-options">
+            ${state.diseases.map((disease) => `
+              <label><input type="checkbox" name="conditions" value="${escapeHtml(disease.id)}" ${conditions.includes(disease.id) ? 'checked' : ''} /> ${escapeHtml(disease.name)}</label>
+            `).join('')}
+          </div>
+        </details>
+      </fieldset>
+    `;
+    const adminFields = state.currentUser.role === 'admin' ? `
+      <div class="form-field"><label for="profile-name">Full name</label><input id="profile-name" name="name" value="${escapeHtml(patient.name)}" required /></div>
+      <div class="form-field"><label for="profile-age">Age</label><input id="profile-age" name="age" type="number" min="0" max="120" value="${escapeHtml(patient.age)}" required /></div>
+      <div class="form-field"><label for="profile-city">City</label><input id="profile-city" name="city" value="${escapeHtml(patient.city || '')}" /></div>
+      <div class="form-field"><label for="profile-gender">Gender</label><select id="profile-gender" name="gender">${['', 'Female', 'Male', 'Other', 'Prefer not to say'].map((value) => `<option value="${escapeHtml(value)}" ${patient.gender === value ? 'selected' : ''}>${value || 'Select gender'}</option>`).join('')}</select></div>
+      <div class="form-field"><label for="profile-blood-group">Blood group</label><select id="profile-blood-group" name="bloodGroup">${['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((value) => `<option value="${value}" ${patient.bloodGroup === value ? 'selected' : ''}>${value || 'Select blood group'}</option>`).join('')}</select></div>
+    ` : '';
+    return `
+      <div class="page-header">
+        <div><h1 class="page-title">Edit patient profile</h1><p class="page-subtitle">${escapeHtml(patient.name)} · ${escapeHtml(patient.id)}</p></div>
+      </div>
+      <section class="panel">
+        <form id="patient-profile-form" class="form-grid">
+          ${adminFields}
+          ${clinicalFields}
+          <div class="form-actions" style="grid-column:1/-1;">
+            <button class="ghost-button" type="button" data-action="cancel-patient-edit">Cancel</button>
+            <button class="primary-button" type="submit">Save profile</button>
+          </div>
+        </form>
+      </section>
+    `;
+  }
+
+  const fields = Object.entries(patient)
+    .filter(([key]) => !['_id', 'active'].includes(key))
+    .map(([key, value]) => {
+      const displayValue = key === 'conditions' && Array.isArray(value)
+        ? value.map((condition) => state.diseases.find((disease) => disease.id === condition)?.name || condition)
+        : value;
+      return `
+      <div class="record-detail-field">
+        <dt>${escapeHtml(formatFieldLabel(key))}</dt>
+        <dd>${escapeHtml(formatRecordField(displayValue))}</dd>
+      </div>
+      `;
+    }).join('');
+  return `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">${escapeHtml(patient.name)}</h1>
+        <p class="page-subtitle">Patient profile · ${escapeHtml(patient.id)}</p>
+      </div>
+      <div class="topbar-actions profile-actions">
+        <span class="${isActive(patient) ? 'badge badge-success' : 'badge badge-danger'}">${isActive(patient) ? 'Active profile' : 'Inactive profile'}</span>
+        ${canEdit ? '<button class="secondary-button" type="button" data-action="edit-patient-profile">Edit profile</button>' : ''}
+        ${canManageStatus ? `<button class="${isActive(patient) ? 'ghost-button' : 'secondary-button'}" type="button" data-action="toggle-patient-active">${isActive(patient) ? 'Deactivate profile' : 'Reactivate profile'}</button>` : ''}
+        <button class="ghost-button" type="button" data-action="back-to-patients">Back to patients</button>
+      </div>
+    </div>
+    <section class="panel patient-profile-panel">
+      <div class="panel-header"><h2 class="panel-title">Patient information</h2><span class="value-pill">${escapeHtml(patient.risk || 'Risk not set')} risk</span></div>
+      <dl class="record-detail-grid">${fields}</dl>
+    </section>
+  `;
+}
+
+function renderDoctorProfile() {
+  const doctor = state.selectedRecord?.type === 'doctors' ? state.selectedRecord.record : null;
+  if (!doctor) {
+    return '<section class="panel"><p class="muted">Choose a doctor from the directory to view their profile.</p></section>';
+  }
+  const appointments = state.appointments.filter((appointment) => appointment.doctor === doctor.name);
+  const availability = doctor.availability || 'Availability not listed';
+
+  return `
+    <div class="page-header">
+      <div>
+        <p class="profile-eyebrow">Care team profile</p>
+        <h1 class="page-title">${escapeHtml(doctor.name)}</h1>
+        <p class="page-subtitle">${escapeHtml(doctor.specialty || 'Specialty not listed')} · ${escapeHtml(doctor.department || 'Department not listed')}</p>
+      </div>
+      <div class="topbar-actions profile-actions">
+        <span class="${isActive(doctor) ? 'badge badge-success' : 'badge badge-danger'}">${isActive(doctor) ? 'Active profile' : 'Inactive profile'}</span>
+        ${state.currentUser.role === 'admin' ? `<button class="ghost-button" type="button" data-action="toggle-doctor-active" data-doctor-id="${escapeHtml(doctor.id)}">${isActive(doctor) ? 'Deactivate profile' : 'Reactivate profile'}</button>` : ''}
+        <button class="ghost-button" type="button" data-action="back-to-doctors">Back to doctors</button>
+      </div>
+    </div>
+    <section class="doctor-profile-hero">
+      <div class="doctor-profile-avatar" aria-hidden="true">${escapeHtml(doctor.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join(''))}</div>
+      <div class="doctor-profile-copy">
+        <span class="model-kicker">${renderIcon('activity')} TakeCare care team</span>
+        <h2>${escapeHtml(doctor.name)}</h2>
+        <p>${escapeHtml(doctor.specialty || 'Specialty not listed')}<span aria-hidden="true"> · </span>${escapeHtml(doctor.department || 'Department not listed')}</p>
+      </div>
+      <div class="doctor-profile-status">
+        <span class="muted">Availability</span>
+        <strong>${escapeHtml(availability)}</strong>
+      </div>
+    </section>
+    <div class="grid grid-2 doctor-profile-layout">
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Professional details</h2></div>
+        <dl class="record-detail-grid">
+          <div class="record-detail-field"><dt>Specialty</dt><dd>${escapeHtml(doctor.specialty || 'Not provided')}</dd></div>
+          <div class="record-detail-field"><dt>Department</dt><dd>${escapeHtml(doctor.department || 'Not provided')}</dd></div>
+          <div class="record-detail-field"><dt>Location</dt><dd>${escapeHtml(doctor.city || 'Not provided')}</dd></div>
+          <div class="record-detail-field"><dt>Availability</dt><dd>${escapeHtml(availability)}</dd></div>
+          <div class="record-detail-field"><dt>Profile ID</dt><dd>${escapeHtml(doctor.id || 'Not provided')}</dd></div>
+        </dl>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Appointments</h2><span class="value-pill">${appointments.length}</span></div>
+        ${appointments.length ? `
+          <ul class="doctor-appointment-list">
+            ${appointments.map((appointment) => `
+              <li>
+                <div><strong>${escapeHtml(appointment.patient || 'Patient not listed')}</strong><span>${escapeHtml([appointment.date, appointment.time, appointment.reason].filter(Boolean).join(' · '))}</span></div>
+                <span class="${getStatusClass(appointment.status || '')}">${escapeHtml(appointment.status || 'Pending')}</span>
+              </li>
+            `).join('')}
+          </ul>
+        ` : '<p class="muted">No appointments are currently linked to this doctor.</p>'}
+      </section>
+    </div>
+  `;
+}
+
 function renderSearchResultsPage() {
   const entries = Object.entries(state.searchResults || {});
   const resultCount = entries.reduce((total, [, records]) => total + records.length, 0);
@@ -286,29 +448,64 @@ function getDemographicCounts() {
 }
 
 function getPatientActivityByMonth() {
-  const months = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
-    date.setDate(1);
-    date.setMonth(date.getMonth() - (6 - index));
-    return {
-      key: `${date.getFullYear()}-${date.getMonth()}`,
-      label: date.toLocaleString(undefined, { month: 'short' }),
-      count: 0,
-    };
-  });
+  const analyticsPage = state.currentPage === 'analytics';
+  const recentDays = analyticsPage && state.analyticsRange === '30-days';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const buckets = recentDays
+    ? Array.from({ length: 5 }, (_, index) => {
+      const date = new Date(today);
+      date.setDate(date.getDate() - (29 - index * 7));
+      return { key: index, label: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), count: 0 };
+    })
+    : Array.from({ length: analyticsPage ? 3 : 7 }, (_, index) => {
+      const offset = analyticsPage ? Math.floor(today.getMonth() / 3) * 3 + index : today.getMonth() - (6 - index);
+      const date = new Date(today.getFullYear(), offset, 1);
+      return { key: `${date.getFullYear()}-${date.getMonth()}`, label: date.toLocaleString(undefined, { month: 'short' }), count: 0 };
+    });
+  const periodStart = new Date(today);
+  if (recentDays) periodStart.setDate(periodStart.getDate() - 29);
+  else if (analyticsPage) periodStart.setMonth(Math.floor(today.getMonth() / 3) * 3, 1);
+  else periodStart.setMonth(periodStart.getMonth() - 6, 1);
   state.patientRecords.forEach((patient) => {
     if (!patient.lastVisit) return;
     const visitDate = new Date(`${patient.lastVisit}T00:00:00`);
-    const month = months.find((item) => item.key === `${visitDate.getFullYear()}-${visitDate.getMonth()}`);
+    if (visitDate < periodStart || visitDate > today) return;
+    if (recentDays) {
+      const week = Math.min(4, Math.floor((visitDate - periodStart) / (7 * 24 * 60 * 60 * 1000)));
+      buckets[week].count += 1;
+      return;
+    }
+    const month = buckets.find((item) => item.key === `${visitDate.getFullYear()}-${visitDate.getMonth()}`);
     if (month) month.count += 1;
   });
-  return months;
+  return buckets;
 }
 
 function getAppointmentWeekdayCounts() {
   const counts = Array(7).fill(0);
+  const analyticsPage = state.currentPage === 'analytics';
+  if (!analyticsPage) {
+    state.appointments.forEach((appointment) => {
+      const day = new Date(`${appointment.date}T00:00:00`).getDay();
+      counts[day] += 1;
+    });
+    return counts;
+  }
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const periodStart = new Date(today);
+  if (state.analyticsRange === '30-days') {
+    periodStart.setDate(periodStart.getDate() - 29);
+    periodStart.setHours(0, 0, 0, 0);
+  } else {
+    periodStart.setMonth(Math.floor(today.getMonth() / 3) * 3, 1);
+    periodStart.setHours(0, 0, 0, 0);
+  }
   state.appointments.forEach((appointment) => {
-    const day = new Date(`${appointment.date}T00:00:00`).getDay();
+    const appointmentDate = new Date(`${appointment.date}T00:00:00`);
+    if (appointmentDate < periodStart || appointmentDate > today) return;
+    const day = appointmentDate.getDay();
     counts[day] += 1;
   });
   return counts;
@@ -541,6 +738,7 @@ function renderOverview() {
 }
 
 function renderPatients() {
+  const patientSearchText = escapeHtml(state.patientSearch);
   return `
     <div class="page-header">
       <div>
@@ -555,17 +753,31 @@ function renderPatients() {
       </div>
       <div class="form-grid">
         <div class="form-field">
-          <label>Search patient</label>
-          <input type="text" placeholder="Search by name, ID, or status" />
+          <label for="patient-directory-search">Search patient</label>
+          <input id="patient-directory-search" type="search" data-patient-search value="${patientSearchText}" placeholder="Search by name, ID, city, or condition" />
         </div>
         <div class="form-field">
-          <label>Risk filter</label>
-          <select>
-            <option>All patients</option>
-            <option>Low risk</option>
-            <option>Medium risk</option>
-            <option>High risk</option>
+          <label for="patient-risk-filter">Risk filter</label>
+          <select id="patient-risk-filter" data-patient-risk-filter>
+            <option value="all" ${state.patientRiskFilter === 'all' ? 'selected' : ''}>All risk levels</option>
+            <option value="low" ${state.patientRiskFilter === 'low' ? 'selected' : ''}>Low risk</option>
+            <option value="medium" ${state.patientRiskFilter === 'medium' ? 'selected' : ''}>Medium risk</option>
+            <option value="high" ${state.patientRiskFilter === 'high' ? 'selected' : ''}>High risk</option>
           </select>
+        </div>
+        ${state.currentUser.role === 'admin' ? `
+          <div class="form-field">
+            <label for="patient-activity-filter">Profile status</label>
+            <select id="patient-activity-filter" data-patient-activity-filter>
+              <option value="active" ${state.patientActivityFilter === 'active' ? 'selected' : ''}>Active profiles</option>
+              <option value="inactive" ${state.patientActivityFilter === 'inactive' ? 'selected' : ''}>Inactive profiles</option>
+              <option value="all" ${state.patientActivityFilter === 'all' ? 'selected' : ''}>All profiles</option>
+            </select>
+          </div>
+        ` : ''}
+        <div class="form-field">
+          <label for="patient-directory-count">Showing</label>
+          <div class="directory-count" id="patient-directory-count" aria-live="polite">${state.patientRecords.length} patient profiles</div>
         </div>
       </div>
     </section>
@@ -583,22 +795,25 @@ function renderPatients() {
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
-            ${state.patientRecords.map((patient) => `
-              <tr>
+          <tbody data-patient-table>
+            ${state.patientRecords.map((patient) => {
+              const conditions = (patient.conditions || []).map((condition) => state.diseases.find((disease) => disease.id === condition)?.name || condition);
+              const searchTerms = [patient.name, patient.id, patient.status, patient.city, patient.gender, patient.risk, ...conditions].join(' ').toLowerCase();
+              return `
+              <tr data-patient-row data-search-text="${escapeHtml(searchTerms)}" data-risk="${escapeHtml((patient.risk || '').toLowerCase())}" data-active="${isActive(patient)}">
                 <td>
                   <div class="patient-info">
-                    <div class="patient-avatar">${patient.name.split(' ').map((part) => part[0]).slice(0,2).join('')}</div>
+                    <div class="patient-avatar">${escapeHtml(patient.name.split(' ').map((part) => part[0]).slice(0,2).join(''))}</div>
                     <div>
                       <strong>${escapeHtml(patient.name)}</strong><br>
-                      <span class="muted">${escapeHtml(patient.id)}</span>
+                      <span class="muted">${escapeHtml(patient.id)}${isActive(patient) ? '' : ' · Inactive'}</span>
                     </div>
                   </div>
                 </td>
                 <td>${escapeHtml(patient.age)}</td>
                 <td><span class="${getStatusClass(patient.status)}">${escapeHtml(patient.status)}</span></td>
                 <td>${escapeHtml(patient.lastVisit)}</td>
-                <td>${escapeHtml((patient.conditions || []).map((condition) => state.diseases.find((disease) => disease.id === condition)?.name || condition).join(', ') || 'None listed')}</td>
+                <td>${escapeHtml(conditions.join(', ') || 'None listed')}</td>
                 <td><span class="${getStatusClass(patient.risk)}">${escapeHtml(patient.risk)}</span></td>
                 <td>
                   <div class="topbar-actions">
@@ -607,7 +822,9 @@ function renderPatients() {
                   </div>
                 </td>
               </tr>
-            `).join('')}
+            `;
+            }).join('')}
+            <tr data-patient-empty hidden><td colspan="7">No patients match these filters.</td></tr>
           </tbody>
         </table>
       </div>
@@ -662,21 +879,24 @@ function renderDoctors() {
   const results = state.doctors.map((doctor) => {
     const doctorAppointments = state.appointments.filter((appointment) => appointment.doctor === doctor.name);
     return `
-      <article class="doctor-card">
-        <div class="doctor-info">
-          <div class="doctor-avatar">${doctor.name.split(' ').map((part) => part[0]).slice(0,2).join('')}</div>
-          <div>
+      <article class="doctor-card doctor-directory-card" data-doctor-card data-search-text="${escapeHtml(`${doctor.name} ${doctor.specialty} ${doctor.department} ${doctor.city || ''}`.toLowerCase())}" data-department="${escapeHtml((doctor.department || '').toLowerCase())}" data-active="${isActive(doctor)}" ${!isActive(doctor) && state.currentUser.role !== 'admin' ? 'hidden' : ''}>
+        <button class="doctor-profile-link" type="button" data-action="view-doctor" data-doctor-id="${escapeHtml(doctor.id)}" aria-label="View ${escapeHtml(doctor.name)} profile">
+          <span class="doctor-avatar" aria-hidden="true">${escapeHtml(doctor.name.split(' ').map((part) => part[0]).slice(0,2).join(''))}</span>
+          <span class="doctor-card-identity">
             <strong>${escapeHtml(doctor.name)}</strong>
-              <div class="muted">${escapeHtml(doctor.specialty)}</div>
-          </div>
-        </div>
-        <div class="kpi-inline" style="margin-top: 1rem;">
-          <span>${doctor.department}</span>
-          <span class="value-pill">${doctor.availability}</span>
-        </div>
-        <div class="mini-table" style="margin-top: 1rem;">
-          <tr><td>Appointments</td><td>${doctorAppointments.length}</td></tr>
-          <tr><td>Location</td><td>${doctor.city || doctor.department}</td></tr>
+            <span>${escapeHtml(doctor.specialty || 'Specialty not listed')}</span>
+          </span>
+          <span class="doctor-card-arrow" aria-hidden="true">→</span>
+        </button>
+        <p class="doctor-card-department">${escapeHtml(doctor.department || 'Department not listed')}</p>
+        <dl class="doctor-card-details">
+          <div><dt>Location</dt><dd>${escapeHtml(doctor.city || 'Not listed')}</dd></div>
+          <div><dt>Availability</dt><dd><span class="${getStatusClass(doctor.availability || '')}">${escapeHtml(doctor.availability || 'Not listed')}</span></dd></div>
+          <div><dt>Appointments</dt><dd>${doctorAppointments.length}</dd></div>
+        </dl>
+        <div class="doctor-card-footer">
+          <span class="${isActive(doctor) ? 'badge badge-success' : 'badge badge-danger'}">${isActive(doctor) ? 'Active profile' : 'Inactive profile'}</span>
+          ${state.currentUser.role === 'admin' ? `<button class="ghost-button" type="button" data-action="toggle-doctor-active" data-doctor-id="${escapeHtml(doctor.id)}">${isActive(doctor) ? 'Deactivate' : 'Reactivate'}</button>` : ''}
         </div>
       </article>
     `;
@@ -692,16 +912,19 @@ function renderDoctors() {
     </div>
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">Clinical staff</h2>
-        <select style="min-width: 180px; border: 1px solid var(--border); border-radius: 0.8rem; background: var(--surface); color: var(--text); padding: 0.65rem 0.8rem;">
-          <option>All departments</option>
-          <option>Cardiology</option>
-          <option>Primary Care</option>
-          <option>Imaging</option>
-          <option>Metabolic Health</option>
-        </select>
+        <div class="doctor-directory-heading">
+          <h2 class="panel-title">Clinical staff</h2>
+          <p class="muted">Select a doctor to explore their profile and appointment schedule.</p>
+        </div>
+        <div class="directory-controls">
+          <input type="search" data-doctor-search value="${escapeHtml(state.doctorSearch)}" placeholder="Search doctors" aria-label="Search doctors" />
+          <select data-doctor-department aria-label="Filter doctors by department">
+            <option value="all">All departments</option>
+            ${[...new Set(state.doctors.map((doctor) => doctor.department).filter(Boolean))].sort().map((department) => `<option value="${escapeHtml(department.toLowerCase())}" ${state.doctorDepartmentFilter === department.toLowerCase() ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+          </select>
+        </div>
       </div>
-      <div class="doctor-grid">${results}</div>
+      <div class="doctor-grid">${results || '<div class="placeholder-box">No doctors match these filters.</div>'}</div>
     </section>
   `;
 }
@@ -721,18 +944,27 @@ function renderStaff() {
         <h2 class="panel-title">Staff directory</h2>
         <span class="value-pill">${staffAccounts.length} ${staffAccounts.length === 1 ? 'staff member' : 'staff members'}</span>
       </div>
+      <div class="directory-controls staff-directory-controls">
+        <input type="search" data-staff-search value="${escapeHtml(state.staffSearch)}" placeholder="Search staff by name or email" aria-label="Search staff by name or email" />
+        <select data-staff-activity aria-label="Filter staff by profile status">
+          <option value="active" ${state.staffActivityFilter === 'active' ? 'selected' : ''}>Active profiles</option>
+          <option value="inactive" ${state.staffActivityFilter === 'inactive' ? 'selected' : ''}>Inactive profiles</option>
+          <option value="all" ${state.staffActivityFilter === 'all' ? 'selected' : ''}>All profiles</option>
+        </select>
+      </div>
       <div class="doctor-grid">
         ${staffAccounts.map((account) => {
           const profile = state.users.find((user) => user.accountId === account.id);
           const initials = account.name.trim().split(/\s+/).map((part) => part[0]).slice(0, 2).join('');
           const pageAccessCount = (account.allowedPages || rolePages.staff).length;
           return `
-            <article class="doctor-card staff-card">
+            <article class="doctor-card staff-card" data-staff-card data-search-text="${escapeHtml(`${account.name} ${account.email} ${account.id}`.toLowerCase())}" data-active="${isActive(account)}">
               <div class="doctor-info staff-card-heading">
                 <div class="doctor-avatar staff-avatar" aria-hidden="true">${escapeHtml(initials)}</div>
                 <div>
                   <h3>${escapeHtml(account.name)}</h3>
                   <span class="value-pill">Staff member</span>
+                  <span class="${isActive(account) ? 'badge badge-success' : 'badge badge-danger'}">${isActive(account) ? 'Active' : 'Inactive'}</span>
                 </div>
               </div>
               <dl class="staff-details">
@@ -753,6 +985,9 @@ function renderStaff() {
                   <dd>${pageAccessCount} pages</dd>
                 </div>
               </dl>
+              <div class="profile-card-actions">
+                <button class="ghost-button" type="button" data-action="toggle-account-active" data-account-id="${escapeHtml(account.id)}">${isActive(account) ? 'Deactivate profile' : 'Reactivate profile'}</button>
+              </div>
             </article>
           `;
         }).join('') || '<div class="placeholder-box">No staff accounts have been added yet.</div>'}
@@ -781,6 +1016,9 @@ function renderAppointments() {
       </section>
     `;
   }
+  const appointments = state.appointmentFilter === 'all'
+    ? state.appointments
+    : state.appointments.filter((appointment) => appointment.status.toLowerCase() === state.appointmentFilter);
   return `
     <div class="page-header">
       <div>
@@ -790,6 +1028,14 @@ function renderAppointments() {
       ${state.currentUser.role !== 'doctor' ? '<button class="primary-button" type="button" data-action="add-record" data-record-type="appointment"><span>+</span> New appointment</button>' : ''}
     </div>
     <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Appointment schedule</h2>
+        <label class="appointment-filter-label">Filter status
+          <select data-appointment-filter aria-label="Filter appointments by status">
+            ${[['all', 'All statuses'], ['pending', 'Pending'], ['confirmed', 'Confirmed'], ['completed', 'Completed'], ['rescheduled', 'Rescheduled'], ['cancelled', 'Cancelled']].map(([value, label]) => `<option value="${value}" ${state.appointmentFilter === value ? 'selected' : ''}>${label}</option>`).join('')}
+          </select>
+        </label>
+      </div>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
@@ -804,7 +1050,7 @@ function renderAppointments() {
             </tr>
           </thead>
           <tbody>
-            ${state.appointments.map((appointment) => `
+            ${appointments.map((appointment) => `
               <tr>
                 <td>${escapeHtml(appointment.patient)}</td>
                 <td>${escapeHtml(appointment.date)}</td>
@@ -819,6 +1065,7 @@ function renderAppointments() {
                 ` : ''}
               </tr>
             `).join('')}
+            ${appointments.length ? '' : '<tr><td colspan="7">No appointments match this status.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -851,8 +1098,8 @@ function renderAnalytics() {
         <p class="page-subtitle">Trend analysis for patient utilization, appointments, and cohort health.</p>
       </div>
       <div class="topbar-actions">
-        <button class="secondary-button" type="button">30 days</button>
-        <button class="primary-button" type="button">This quarter</button>
+        <button class="${state.analyticsRange === '30-days' ? 'primary-button' : 'secondary-button'}" type="button" data-analytics-range="30-days">Last 30 days</button>
+        <button class="${state.analyticsRange === 'quarter' ? 'primary-button' : 'secondary-button'}" type="button" data-analytics-range="quarter">This quarter</button>
       </div>
     </div>
     <div class="grid grid-3">
@@ -1008,6 +1255,9 @@ function renderModelPerformance() {
     { label: 'F1 Score', value: performance.f1 },
     { label: 'ROC-AUC', value: performance.rocAuc },
   ];
+  const metricPercent = (value) => value !== undefined && value !== null && Number.isFinite(Number(value))
+    ? Math.max(0, Math.min(100, Number(value) * 100))
+    : 0;
 
   return `
     <div class="page-header">
@@ -1017,29 +1267,32 @@ function renderModelPerformance() {
       </div>
       <button class="secondary-button" type="button" data-action="refresh-data">Refresh metrics</button>
     </div>
-    <section class="panel model-evaluation-summary">
+    <section class="panel model-evaluation-summary model-performance-hero">
       <div>
+        <span class="model-kicker">${renderIcon('activity')} Clinical decision support</span>
         <h2 class="panel-title">${escapeHtml(performance.model || 'Heart disease model')}</h2>
         <p class="muted">${escapeHtml(performance.evaluation || (notebookEvaluation ? 'Evaluation details unavailable' : 'Evaluation metrics published by an administrator.'))}</p>
       </div>
       <div class="model-evaluation-meta">
-        <span><strong>${Number(performance.datasetSize) || '—'}</strong> dataset records</span>
-        <span><strong>${Number(performance.testSize) || '—'}</strong> held-out test records</span>
+        <span><strong>${Number(performance.datasetSize) || '—'}</strong><small>dataset records</small></span>
+        <span><strong>${Number(performance.testSize) || '—'}</strong><small>held-out test records</small></span>
         <span>Source: <code>${escapeHtml(performance.source || 'Saved evaluation')}</code></span>
       </div>
     </section>
-    <div class="grid grid-3" style="margin-bottom: 1.25rem;">
+    <div class="grid model-metric-grid">
       ${metrics.map((metric) => `
-        <article class="stat-card">
+        <article class="stat-card model-metric-card">
           <div class="stat-header">
             <span>${metric.label}</span>
             <span class="stat-icon">${renderIcon('chart')}</span>
           </div>
           <p class="stat-value">${metricValue(metric.value)}</p>
+          <div class="metric-track" role="presentation"><span style="width:${metricPercent(metric.value)}%"></span></div>
           <div class="muted">Held-out test set</div>
         </article>
       `).join('')}
     </div>
+    <div class="model-context-note"><strong>Reading these results</strong><span>Metrics summarize historical test-set performance and are not a diagnosis. Use clinical judgment and consult a qualified clinician.</span></div>
     ${modelComparisons.length ? `
       <section class="panel model-comparison-panel">
         <div class="panel-header">
@@ -1131,7 +1384,7 @@ function renderRecordForm() {
         <div class="form-field"><label for="record-status">Status</label><select id="record-status" name="status"><option>Stable</option><option>Monitoring</option><option>Critical</option></select></div>
         <div class="form-field"><label for="record-risk">Risk level</label><select id="record-risk" name="risk"><option>Low</option><option>Medium</option><option>High</option></select></div>
         <div class="form-field"><label for="record-last-visit">Last visit</label><input id="record-last-visit" name="lastVisit" type="date" /></div>
-        <div class="form-field" style="grid-column:1 / -1;"><label for="record-conditions">Conditions</label><select id="record-conditions" name="conditions" multiple size="5">${state.diseases.map((disease) => `<option value="${escapeHtml(disease.id)}">${escapeHtml(disease.name)}</option>`).join('')}</select></div>
+        <div class="form-field"><label for="record-conditions">Condition</label><select id="record-conditions" name="conditions"><option value="">Select a condition</option>${state.diseases.map((disease) => `<option value="${escapeHtml(disease.id)}">${escapeHtml(disease.name)}</option>`).join('')}</select></div>
       `,
     },
     doctor: {
@@ -1149,8 +1402,8 @@ function renderRecordForm() {
       title: 'New appointment',
       description: state.currentUser.role === 'patient' ? 'Request an appointment with a doctor.' : 'Schedule an appointment for a patient with a doctor.',
       fields: `
-        ${state.currentUser.role === 'patient' ? '' : `<div class="form-field"><label for="record-patient">Patient</label><select id="record-patient" name="patient" required><option value="">Select patient</option>${state.patientRecords.map((patient) => `<option>${escapeHtml(patient.name)}</option>`).join('')}</select></div>`}
-        <div class="form-field"><label for="record-doctor">Doctor</label><select id="record-doctor" name="doctor" required><option value="">Select doctor</option>${state.doctors.map((doctor) => `<option>${escapeHtml(doctor.name)}</option>`).join('')}</select></div>
+        ${state.currentUser.role === 'patient' ? '' : `<div class="form-field"><label for="record-patient">Patient</label><select id="record-patient" name="patient" required><option value="">Select patient</option>${state.patientRecords.filter(isActive).map((patient) => `<option>${escapeHtml(patient.name)}</option>`).join('')}</select></div>`}
+        <div class="form-field"><label for="record-doctor">Doctor</label><select id="record-doctor" name="doctor" required><option value="">Select doctor</option>${state.doctors.filter(isActive).map((doctor) => `<option>${escapeHtml(doctor.name)}</option>`).join('')}</select></div>
         <div class="form-field"><label for="record-date">Date</label><input id="record-date" name="date" type="date" required /></div>
         <div class="form-field"><label for="record-time">Time</label><input id="record-time" name="time" type="time" required /></div>
         <div class="form-field"><label for="record-reason">Reason</label><input id="record-reason" name="reason" placeholder="e.g. Cardiology follow-up" required /></div>
@@ -1219,15 +1472,18 @@ function renderSettings() {
     <section class="panel">
       <div class="panel-header"><h2 class="panel-title">Accounts and page access</h2></div>
       <div class="table-wrap"><table class="data-table">
-        <thead><tr><th>Account</th><th>Role</th><th>Visible pages</th><th></th></tr></thead>
+        <thead><tr><th>Account</th><th>Role / status</th><th>Visible pages</th><th>Actions</th></tr></thead>
         <tbody>${state.accounts.map((account) => `
           <tr><td><strong>${escapeHtml(account.name)}</strong><br><span class="muted">${escapeHtml(account.email)}</span></td>
-          <td>${escapeHtml(account.role)}</td>
+          <td>${escapeHtml(account.role)}<br><span class="${isActive(account) ? 'badge badge-success' : 'badge badge-danger'}">${isActive(account) ? 'Active' : 'Inactive'}</span></td>
           <td><div class="permission-list">${(rolePages[account.role] || []).map((page) => {
             const label = navItems.find((item) => item.id === page)?.label || page;
             return `<label><input type="checkbox" data-account-page="${escapeHtml(account.id)}" value="${escapeHtml(page)}" ${account.allowedPages.includes(page) ? 'checked' : ''} /> ${escapeHtml(label)}</label>`;
           }).join('')}</div></td>
-          <td><button class="secondary-button" type="button" data-action="save-permissions" data-account-id="${escapeHtml(account.id)}">Save</button></td></tr>
+          <td><div class="account-actions">
+            <button class="secondary-button" type="button" data-action="save-permissions" data-account-id="${escapeHtml(account.id)}">Save access</button>
+            <button class="ghost-button" type="button" data-action="toggle-account-active" data-account-id="${escapeHtml(account.id)}" ${account.id === state.currentUser.id ? 'disabled' : ''}>${isActive(account) ? 'Deactivate' : 'Reactivate'}</button>
+          </div></td></tr>
         `).join('') || '<tr><td colspan="4">No accounts found.</td></tr>'}</tbody>
       </table></div>
     </section>
@@ -1286,9 +1542,22 @@ function renderSettings() {
       </section>
       <section class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">About the project</h2>
+          <h2 class="panel-title">About TakeCare</h2>
         </div>
-        <p class="muted">TakeCare is a prototype using a MongoDB-backed Flask API and the saved heart disease model. Patient, doctor, appointment, search, profile, assessment, and model-performance records are stored in MongoDB.</p>
+        <p class="muted">TakeCare brings patient records, care teams, appointments, analytics, and model evaluation together in one healthcare dashboard.</p>
+        <div class="about-profile">
+          <div class="about-profile-avatar" aria-hidden="true">RB</div>
+          <div class="about-profile-copy">
+            <span class="profile-eyebrow">Created by</span>
+            <h3>Rutik Bajad</h3>
+            <p>Developer · Healthcare technology</p>
+          </div>
+        </div>
+        <div class="about-links" aria-label="Rutik Bajad contact links">
+          <a href="https://github.com/RutikBajad" target="_blank" rel="noopener noreferrer"><span>GitHub</span><strong>github.com/RutikBajad</strong></a>
+          <a href="https://www.linkedin.com/in/rutikbajad/" target="_blank" rel="noopener noreferrer"><span>LinkedIn</span><strong>linkedin.com/in/rutikbajad</strong></a>
+          <a href="mailto:rutikbajad9699@gmail.com"><span>Email</span><strong>rutikbajad9699@gmail.com</strong></a>
+        </div>
         <div class="placeholder-box" style="margin-top: 1rem;">Educational prototype only. Do not store real patient information until appropriate privacy, security, compliance, and clinical safeguards are in place. Some charts and activity content remain illustrative.</div>
       </section>
     </div>
@@ -1333,7 +1602,7 @@ function renderTopbar() {
       <div class="search-area">
         <form class="search-box" id="global-search-form" role="search">
           <span>${renderIcon('search')}</span>
-          <input type="search" name="query" value="${escapeHtml(state.searchQuery)}" placeholder="Search patients, doctors, or records" aria-label="Search patients, doctors, or records" />
+          <input type="search" name="query" value="${escapeHtml(state.searchQuery)}" placeholder="Search patients, doctors, staff, or records" aria-label="Search patients, doctors, staff, or records" />
           <button class="search-submit" type="submit">Search</button>
         </form>
         ${state.searchFeedback ? `
@@ -1351,11 +1620,80 @@ function renderTopbar() {
   `;
 }
 
+function getChatReply(message) {
+  const query = message.toLowerCase();
+  if (/\b(appointment|book|booking|schedule|visit)\b/.test(query)) {
+    if (!userCanAccess('appointments')) {
+      return { text: 'Your account cannot access appointments. Please ask an administrator to review your page access.' };
+    }
+    const patientSteps = state.currentUser.role === 'patient'
+      ? 'Choose “Request appointment”, select a doctor, date, and time, then enter the reason for your visit.'
+      : 'Open appointments to review the schedule or choose “New appointment” to create one.';
+    return { text: `${patientSteps} I can take you there.`, action: 'appointments', label: 'Open appointments' };
+  }
+  if (/\b(search|look up)\b/.test(query)) {
+    return { text: 'Use the global search bar at the top of any page to find records available to your account.', action: 'search', label: 'Focus global search' };
+  }
+
+  const destinations = [
+    { page: 'patients', match: /\b(patient|patients)\b/, label: 'Open patients' },
+    { page: 'doctors', match: /\b(doctor|doctors|physician)\b/, label: 'Open doctors' },
+    { page: 'staff', match: /\b(staff|employee|employees)\b/, label: 'Open staff' },
+    { page: 'analytics', match: /\b(analytics|trend|trends|report|reports)\b/, label: 'Open analytics' },
+    { page: 'model-performance', match: /\b(model|performance|accuracy|metrics)\b/, label: 'Open model performance' },
+    { page: 'settings', match: /\b(settings|preference|account)\b/, label: 'Open settings' },
+    { page: 'overview', match: /\b(home|overview|dashboard)\b/, label: 'Open overview' },
+  ];
+  const destination = destinations.find((item) => item.match.test(query));
+  if (destination) {
+    if (!userCanAccess(destination.page)) {
+      return { text: 'Your account does not have access to that page. Please ask an administrator for access.' };
+    }
+    return { text: `Opening ${destination.page.replace('-', ' ')}.`, action: destination.page, label: destination.label };
+  }
+
+  return { text: 'I can help with appointments, finding records, or opening pages such as Patients, Doctors, Analytics, and Settings. I cannot provide medical advice; please contact your care team for health questions.' };
+}
+
+function renderChatAssistant() {
+  const messages = state.chatMessages.map((message) => `
+    <div class="chat-message ${message.role === 'user' ? 'chat-message-user' : 'chat-message-assistant'}">
+      <p>${escapeHtml(message.text)}</p>
+      ${message.action ? `<button type="button" class="chat-action" data-chat-action="${escapeHtml(message.action)}">${escapeHtml(message.label)}</button>` : ''}
+    </div>
+  `).join('');
+
+  return `
+    <aside class="chat-assistant" aria-label="TakeCare navigation assistant">
+      ${state.chatOpen ? `
+        <section class="chat-panel" aria-label="Chat assistant">
+          <header class="chat-header">
+            <div><strong>TakeCare assistant</strong><span>Rule-based page help</span></div>
+            <button type="button" class="icon-button" data-action="close-chat" aria-label="Close assistant">×</button>
+          </header>
+          <div class="chat-messages" aria-live="polite">
+            ${messages || '<div class="chat-welcome"><strong>What can I help you find?</strong><p>Ask about booking an appointment or opening a dashboard page.</p></div>'}
+          </div>
+          <div class="chat-quick-actions">
+            <button type="button" data-chat-prompt="How do I book an appointment?">Book appointment</button>
+            <button type="button" data-chat-prompt="Find a doctor">Find a doctor</button>
+          </div>
+          <form class="chat-form" data-chat-form>
+            <input type="text" name="message" placeholder="Ask how to navigate..." aria-label="Ask the assistant" required />
+            <button class="primary-button" type="submit">Send</button>
+          </form>
+        </section>
+      ` : ''}
+      <button type="button" class="chat-launcher" data-action="toggle-chat" aria-expanded="${state.chatOpen}">${renderIcon('chat')}<span>${state.chatOpen ? 'Assistant open' : 'Ask TakeCare'}</span></button>
+    </aside>
+  `;
+}
+
 function renderContent() {
   if (!state.currentUser) {
     return renderAuthPage();
   }
-  if (!userCanAccess(state.currentPage) && !['search-results', 'record-detail'].includes(state.currentPage)) {
+  if (!userCanAccess(state.currentPage) && !['search-results', 'record-detail', 'patient-profile', 'doctor-profile'].includes(state.currentPage)) {
     state.currentPage = state.currentUser.allowedPages[0] || 'overview';
   }
   const pages = {
@@ -1369,6 +1707,8 @@ function renderContent() {
     'add-record': renderRecordForm(),
     'search-results': renderSearchResultsPage(),
     'record-detail': renderRecordDetail(),
+    'patient-profile': renderPatientProfile(),
+    'doctor-profile': renderDoctorProfile(),
     analytics: renderAnalytics(),
     'ml-assessment': renderAssessment(),
     'model-performance': renderModelPerformance(),
@@ -1383,11 +1723,12 @@ function renderContent() {
         ${renderTopbar()}
         <main class="content-area">
           ${state.dataError ? `<div class="data-error" role="alert">${escapeHtml(state.dataError)}</div>` : ''}
-          ${state.dataNotice ? `<div class="data-notice" role="status">${escapeHtml(state.dataNotice)}</div>` : ''}
+          ${state.dataNotice ? `<div class="data-notice" role="status"><span>${escapeHtml(state.dataNotice)}</span><button class="notice-close" type="button" data-action="close-notice" aria-label="Dismiss notification">Dismiss</button></div>` : ''}
           ${pages[state.currentPage] || renderOverview()}
         </main>
       </div>
       ${state.alertsOpen ? renderAlertsDialog() : ''}
+      ${renderChatAssistant()}
     </div>
   `;
 }
@@ -1636,7 +1977,134 @@ function drawCharts() {
   });
 }
 
+function applyDirectoryFilters() {
+  const patientRows = Array.from(document.querySelectorAll('[data-patient-row]'));
+  let visiblePatients = 0;
+  patientRows.forEach((row) => {
+    const activityMatches = state.patientActivityFilter === 'all'
+      || (row.dataset.active === 'true') === (state.patientActivityFilter === 'active');
+    const riskMatches = state.patientRiskFilter === 'all' || row.dataset.risk === state.patientRiskFilter;
+    const searchMatches = row.dataset.searchText.includes(state.patientSearch.toLowerCase());
+    row.hidden = !(activityMatches && riskMatches && searchMatches);
+    if (!row.hidden) visiblePatients += 1;
+  });
+  const patientEmpty = document.querySelector('[data-patient-empty]');
+  if (patientEmpty) patientEmpty.hidden = visiblePatients > 0;
+  const patientCount = document.getElementById('patient-directory-count');
+  if (patientCount) patientCount.textContent = `${visiblePatients} patient ${visiblePatients === 1 ? 'profile' : 'profiles'}`;
+
+  const doctorCards = Array.from(document.querySelectorAll('[data-doctor-card]'));
+  doctorCards.forEach((card) => {
+    const activeMatches = state.currentUser.role === 'admin' || card.dataset.active === 'true';
+    const departmentMatches = state.doctorDepartmentFilter === 'all' || card.dataset.department === state.doctorDepartmentFilter;
+    const searchMatches = card.dataset.searchText.includes(state.doctorSearch.toLowerCase());
+    card.hidden = !(activeMatches && departmentMatches && searchMatches);
+  });
+
+  const staffCards = Array.from(document.querySelectorAll('[data-staff-card]'));
+  staffCards.forEach((card) => {
+    const activityMatches = state.staffActivityFilter === 'all'
+      || (card.dataset.active === 'true') === (state.staffActivityFilter === 'active');
+    card.hidden = !(activityMatches && card.dataset.searchText.includes(state.staffSearch.toLowerCase()));
+  });
+}
+
+function sendChatMessage(message) {
+  const text = message.trim();
+  if (!text) return;
+  state.chatMessages.push({ role: 'user', text });
+  state.chatMessages.push({ role: 'assistant', ...getChatReply(text) });
+  render();
+  const chatMessages = document.querySelector('.chat-messages');
+  if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+  document.querySelector('[data-chat-form] input')?.focus();
+}
+
+function handleChatAction(action) {
+  if (action === 'search') {
+    document.querySelector('#global-search-form [name="query"]')?.focus();
+    return;
+  }
+  if (userCanAccess(action)) {
+    state.currentPage = action;
+    state.chatOpen = false;
+    render();
+  }
+}
+
 function bindEvents() {
+  document.querySelector('[data-action="close-notice"]')?.addEventListener('click', () => {
+    state.dataNotice = '';
+    render();
+  });
+
+  document.querySelector('[data-action="toggle-chat"]')?.addEventListener('click', () => {
+    state.chatOpen = !state.chatOpen;
+    if (state.chatOpen && !state.chatMessages.length) {
+      state.chatMessages.push({
+        role: 'assistant',
+        text: 'Hi! I can help you navigate TakeCare and explain how to request an appointment. What do you need?',
+      });
+    }
+    render();
+    document.querySelector('[data-chat-form] input')?.focus();
+  });
+  document.querySelector('[data-action="close-chat"]')?.addEventListener('click', () => {
+    state.chatOpen = false;
+    render();
+    document.querySelector('[data-action="toggle-chat"]')?.focus();
+  });
+  document.querySelectorAll('[data-chat-prompt]').forEach((button) => {
+    button.addEventListener('click', () => sendChatMessage(button.dataset.chatPrompt || ''));
+  });
+  document.querySelectorAll('[data-chat-action]').forEach((button) => {
+    button.addEventListener('click', () => handleChatAction(button.dataset.chatAction || ''));
+  });
+  document.querySelector('[data-chat-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    sendChatMessage(String(new FormData(form).get('message') || ''));
+  });
+
+  document.querySelector('[data-patient-search]')?.addEventListener('input', (event) => {
+    state.patientSearch = event.currentTarget.value;
+    applyDirectoryFilters();
+  });
+  document.querySelector('[data-patient-risk-filter]')?.addEventListener('change', (event) => {
+    state.patientRiskFilter = event.currentTarget.value;
+    applyDirectoryFilters();
+  });
+  document.querySelector('[data-patient-activity-filter]')?.addEventListener('change', (event) => {
+    state.patientActivityFilter = event.currentTarget.value;
+    applyDirectoryFilters();
+  });
+  document.querySelector('[data-doctor-search]')?.addEventListener('input', (event) => {
+    state.doctorSearch = event.currentTarget.value;
+    applyDirectoryFilters();
+  });
+  document.querySelector('[data-doctor-department]')?.addEventListener('change', (event) => {
+    state.doctorDepartmentFilter = event.currentTarget.value;
+    applyDirectoryFilters();
+  });
+  document.querySelector('[data-staff-search]')?.addEventListener('input', (event) => {
+    state.staffSearch = event.currentTarget.value;
+    applyDirectoryFilters();
+  });
+  document.querySelector('[data-staff-activity]')?.addEventListener('change', (event) => {
+    state.staffActivityFilter = event.currentTarget.value;
+    applyDirectoryFilters();
+  });
+  document.querySelector('[data-appointment-filter]')?.addEventListener('change', (event) => {
+    state.appointmentFilter = event.currentTarget.value;
+    render();
+  });
+  document.querySelectorAll('[data-analytics-range]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.analyticsRange = button.dataset.analyticsRange;
+      render();
+    });
+  });
+
   document.querySelector('[data-action="view-alerts"]')?.addEventListener('click', () => {
     state.alertsOpen = true;
     render();
@@ -1766,6 +2234,50 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll('[data-action="toggle-account-active"]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const account = state.accounts.find((item) => item.id === button.dataset.accountId);
+      if (!account || account.id === state.currentUser.id) return;
+      const active = !isActive(account);
+      const action = active ? 'reactivate' : 'deactivate';
+      if (!window.confirm(`Are you sure you want to ${action} ${account.name}'s account?`)) return;
+      try {
+        await apiRequest(`/auth/accounts/${encodeURIComponent(account.id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active }),
+        });
+        state.dataNotice = `${account.role[0].toUpperCase()}${account.role.slice(1)} account ${active ? 'reactivated' : 'deactivated'}.`;
+        await loadDashboard();
+      } catch (error) {
+        state.dataError = error.message;
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-action="toggle-doctor-active"]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const doctor = state.doctors.find((item) => item.id === button.dataset.doctorId);
+      if (!doctor) return;
+      const active = !isActive(doctor);
+      const action = active ? 'reactivate' : 'deactivate';
+      if (!window.confirm(`Are you sure you want to ${action} ${doctor.name}'s profile?`)) return;
+      try {
+        await apiRequest(`/doctors/${encodeURIComponent(doctor.id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active }),
+        });
+        state.dataNotice = `Doctor profile ${active ? 'reactivated' : 'deactivated'}.`;
+        await loadDashboard();
+      } catch (error) {
+        state.dataError = error.message;
+        render();
+      }
+    });
+  });
+
   const sidebarToggle = document.getElementById('sidebarToggle');
   if (sidebarToggle) {
     sidebarToggle.addEventListener('click', () => {
@@ -1823,6 +2335,7 @@ function bindEvents() {
         doctor: 'doctors',
         appointment: 'appointments',
         disease: 'diseases',
+        staff: 'staff',
       })[state.recordType] || 'overview';
       state.formFeedback = '';
       render();
@@ -1836,7 +2349,7 @@ function bindEvents() {
       const formData = new FormData(recordForm);
       const record = Object.fromEntries(formData);
       if (state.recordType === 'patient') {
-        record.conditions = Array.from(recordForm.elements.conditions.selectedOptions, (option) => option.value);
+        record.conditions = [recordForm.elements.conditions.value].filter(Boolean);
         record.age = Number(record.age);
       }
       const endpoint = {
@@ -1882,6 +2395,64 @@ function bindEvents() {
     });
   }
 
+  document.getElementById('patient-profile-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const updates = Object.fromEntries(formData);
+    updates.conditions = formData.getAll('conditions');
+    if (state.currentUser.role === 'admin') updates.age = Number(updates.age);
+    try {
+      const patient = await apiRequest(`/patients/${encodeURIComponent(state.selectedRecord.record.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      state.selectedRecord = { type: 'patients', record: patient };
+      state.patientProfileEditing = false;
+      state.dataNotice = 'Patient profile updated successfully.';
+      state.formFeedback = '';
+      await loadDashboard();
+    } catch (error) {
+      state.dataError = error.message;
+      render();
+    }
+  });
+
+  document.querySelector('[data-action="edit-patient-profile"]')?.addEventListener('click', () => {
+    state.patientProfileEditing = true;
+    render();
+  });
+  document.querySelector('[data-action="cancel-patient-edit"]')?.addEventListener('click', () => {
+    state.patientProfileEditing = false;
+    render();
+  });
+  document.querySelector('[data-action="back-to-patients"]')?.addEventListener('click', () => {
+    state.patientProfileEditing = false;
+    state.currentPage = 'patients';
+    render();
+  });
+  document.querySelector('[data-action="toggle-patient-active"]')?.addEventListener('click', async () => {
+    const patient = state.selectedRecord?.record;
+    if (!patient) return;
+    const active = !isActive(patient);
+    const action = active ? 'reactivate' : 'deactivate';
+    if (!window.confirm(`Are you sure you want to ${action} ${patient.name}'s profile?`)) return;
+    try {
+      const updatedPatient = await apiRequest(`/patients/${encodeURIComponent(patient.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active }),
+      });
+      state.selectedRecord = { type: 'patients', record: updatedPatient };
+      state.dataNotice = `Patient profile ${active ? 'reactivated' : 'deactivated'}.`;
+      await loadDashboard();
+    } catch (error) {
+      state.dataError = error.message;
+      render();
+    }
+  });
+
   document.querySelectorAll('[data-action="refresh-data"]').forEach((button) => {
     button.addEventListener('click', loadDashboard);
   });
@@ -1924,9 +2495,25 @@ function bindEvents() {
       const record = state.searchResults?.[type]?.find((item) => item.id === button.dataset.recordId);
       if (!record) return;
       state.selectedRecord = { type, record };
-      state.currentPage = 'record-detail';
+      state.patientProfileEditing = false;
+      state.currentPage = type === 'patients' ? 'patient-profile' : type === 'doctors' ? 'doctor-profile' : 'record-detail';
       render();
     });
+  });
+
+  document.querySelectorAll('[data-action="view-doctor"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const doctor = state.doctors.find((record) => record.id === button.dataset.doctorId);
+      if (!doctor) return;
+      state.selectedRecord = { type: 'doctors', record: doctor };
+      state.currentPage = 'doctor-profile';
+      render();
+    });
+  });
+
+  document.querySelector('[data-action="back-to-doctors"]')?.addEventListener('click', () => {
+    state.currentPage = 'doctors';
+    render();
   });
 
   document.querySelectorAll('[data-related-type][data-related-id]').forEach((button) => {
@@ -1939,7 +2526,8 @@ function bindEvents() {
       const record = collections[type]?.find((item) => item.id === button.dataset.relatedId);
       if (!record) return;
       state.selectedRecord = { type, record };
-      state.currentPage = 'record-detail';
+      state.patientProfileEditing = false;
+      state.currentPage = type === 'patients' ? 'patient-profile' : type === 'doctors' ? 'doctor-profile' : 'record-detail';
       render();
     });
   });
@@ -1989,7 +2577,10 @@ function bindEvents() {
     button.addEventListener('click', () => {
       const patient = state.patientRecords.find((record) => record.id === button.dataset.patientId);
       if (patient) {
-        alert(`${patient.name}\nAge: ${patient.age}\nStatus: ${patient.status}\nRisk: ${patient.risk}`);
+        state.selectedRecord = { type: 'patients', record: patient };
+        state.patientProfileEditing = false;
+        state.currentPage = 'patient-profile';
+        render();
       }
     });
   });
@@ -1998,20 +2589,10 @@ function bindEvents() {
     button.addEventListener('click', async () => {
       const patient = state.patientRecords.find((record) => record.id === button.dataset.patientId);
       if (!patient) return;
-      const conditions = prompt(`Disease IDs, comma-separated:\n${state.diseases.map((disease) => `${disease.id} — ${disease.name}`).join('\n')}`, (patient.conditions || []).join(', '));
-      if (conditions === null) return;
-      try {
-        await apiRequest(`/patients/${encodeURIComponent(patient.id)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conditions: conditions.split(',').map((value) => value.trim()).filter(Boolean) }),
-        });
-        state.dataNotice = 'Patient conditions updated.';
-        await loadDashboard();
-      } catch (error) {
-        state.dataError = error.message;
-        render();
-      }
+      state.selectedRecord = { type: 'patients', record: patient };
+      state.patientProfileEditing = true;
+      state.currentPage = 'patient-profile';
+      render();
     });
   });
 
@@ -2136,6 +2717,7 @@ function render() {
   app.innerHTML = renderContent();
   applyTheme();
   bindEvents();
+  applyDirectoryFilters();
   if (state.currentUser) drawCharts();
   else destroyCharts();
 }
