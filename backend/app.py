@@ -20,6 +20,15 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / '.env')
 MODEL_PATH = ROOT_DIR / 'ml' / 'heart_model.pkl'
 MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://127.0.0.1:27017')
+
+from urllib.parse import urlparse
+
+parsed_uri = urlparse(MONGODB_URI)
+print("MongoDB scheme:", parsed_uri.scheme)
+print("MongoDB hostname:", parsed_uri.hostname)
+print("MongoDB username:", parsed_uri.username)
+print("MongoDB password configured:", parsed_uri.password is not None)
+
 MONGODB_DATABASE = os.getenv('MONGODB_DATABASE', 'healthpilot')
 configured_origins = os.getenv(
     'FRONTEND_ORIGINS',
