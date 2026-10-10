@@ -4,6 +4,7 @@ import { Chart } from 'chart.js/auto';
 const app = document.querySelector('#app');
 const configuredApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5001' : '');
 const API_BASE_URL = `${configuredApiUrl.replace(/\/$/, '')}/api`;
+const patientRegistrationEnabled = import.meta.env.VITE_ALLOW_PATIENT_REGISTRATION === 'true';
 
 const state = {
   theme: localStorage.getItem('theme') || 'light',
@@ -95,7 +96,7 @@ function userCanAccess(page) {
 }
 
 function renderAuthPage() {
-  const isRegister = state.authMode === 'register';
+  const isRegister = patientRegistrationEnabled && state.authMode === 'register';
   return `
     <main class="auth-shell">
       <section class="panel auth-panel">
@@ -113,11 +114,11 @@ function renderAuthPage() {
             <div class="form-field"><label for="auth-city">City</label><input id="auth-city" name="city" autocomplete="address-level2" /></div>
             <div class="form-field"><label for="auth-gender">Gender</label><select id="auth-gender" name="gender"><option value="">Select gender</option><option>Female</option><option>Male</option><option>Other</option><option>Prefer not to say</option></select></div>
           ` : ''}
-          <div class="form-field"><label for="auth-email">Email</label><input id="auth-email" name="email" type="email" autocomplete="email" required /></div>
-          <div class="form-field"><label for="auth-password">Password</label><input id="auth-password" name="password" type="password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" ${isRegister ? 'minlength="12"' : ''} required />${isRegister ? '<span class="muted">At least 12 characters.</span>' : ''}</div>
+          <div class="form-field"><label for="auth-email">${isRegister ? 'Email' : 'Account ID'}</label><input id="auth-email" name="email" type="${isRegister ? 'email' : 'text'}" autocomplete="${isRegister ? 'email' : 'username'}" required /></div>
+          <div class="form-field"><label for="auth-password">Password</label><input id="auth-password" name="password" type="password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" ${isRegister ? 'minlength="8"' : ''} required />${isRegister ? '<span class="muted">At least 8 characters.</span>' : ''}</div>
           <div class="form-actions" style="grid-column:1/-1;"><button class="primary-button" type="submit">${isRegister ? 'Create patient account' : 'Sign in'}</button></div>
         </form>
-        <p class="auth-switch">${isRegister ? 'Already registered?' : 'New patient?'} <button class="link-button" type="button" data-action="toggle-auth">${isRegister ? 'Sign in' : 'Create an account'}</button></p>
+        ${patientRegistrationEnabled ? `<p class="auth-switch">${isRegister ? 'Already registered?' : 'New patient?'} <button class="link-button" type="button" data-action="toggle-auth">${isRegister ? 'Sign in' : 'Create an account'}</button></p>` : ''}
         <p class="muted auth-note">Staff, doctor, and administrator accounts are provisioned by an administrator.</p>
       </section>
     </main>
@@ -1424,8 +1425,8 @@ function renderRecordForm() {
       description: 'Create a staff login and linked staff profile. The staff member can sign in with the email and password entered here.',
       fields: `
         <div class="form-field"><label for="record-name">Full name</label><input id="record-name" name="name" autocomplete="name" required /></div>
-        <div class="form-field"><label for="record-email">Email</label><input id="record-email" name="email" type="email" autocomplete="email" required /></div>
-        <div class="form-field"><label for="record-password">Temporary password</label><input id="record-password" name="password" type="password" autocomplete="new-password" minlength="12" required /><span class="muted">At least 12 characters.</span></div>
+        <div class="form-field"><label for="record-email">Account ID</label><input id="record-email" name="email" autocomplete="username" required /></div>
+        <div class="form-field"><label for="record-password">Temporary password</label><input id="record-password" name="password" type="password" autocomplete="new-password" minlength="8" required /><span class="muted">At least 8 characters.</span></div>
       `,
     },
   };
@@ -1462,8 +1463,8 @@ function renderSettings() {
       ${state.formFeedback ? `<div class="data-error" role="alert">${escapeHtml(state.formFeedback)}</div>` : ''}
       <form id="account-form" class="form-grid">
         <div class="form-field"><label for="account-name">Full name</label><input id="account-name" name="name" required /></div>
-        <div class="form-field"><label for="account-email">Email</label><input id="account-email" name="email" type="email" required /></div>
-        <div class="form-field"><label for="account-password">Temporary password</label><input id="account-password" name="password" type="password" minlength="12" required /><span class="muted">At least 12 characters.</span></div>
+        <div class="form-field"><label for="account-email">Account ID</label><input id="account-email" name="email" autocomplete="username" required /></div>
+        <div class="form-field"><label for="account-password">Temporary password</label><input id="account-password" name="password" type="password" minlength="8" required /><span class="muted">At least 8 characters.</span></div>
         <div class="form-field"><label for="account-role">Role</label><select id="account-role" name="role" required><option value="">Select role</option><option value="doctor">Doctor</option><option value="staff">Staff</option><option value="admin">Administrator</option></select></div>
         <div class="form-field" id="account-doctor-field" hidden><label for="account-doctor">Linked doctor record</label><select id="account-doctor" name="doctorName"><option value="">Select doctor</option>${state.doctors.map((doctor) => `<option>${escapeHtml(doctor.name)}</option>`).join('')}</select></div>
         <div class="form-actions" style="grid-column:1/-1"><button class="primary-button" type="submit">Create account</button></div>
@@ -2135,7 +2136,7 @@ function bindEvents() {
     const formData = Object.fromEntries(new FormData(form));
     state.authError = '';
     try {
-      const response = await apiRequest(state.authMode === 'register' ? '/auth/register' : '/auth/login', {
+      const response = await apiRequest(patientRegistrationEnabled && state.authMode === 'register' ? '/auth/register' : '/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),

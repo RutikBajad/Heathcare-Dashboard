@@ -1,6 +1,6 @@
 # Deployment
 
-This repository can be deployed as a **synthetic-data demonstration**. It is not a clinical system and must not be used with real patient information. The application includes role-based sign-in and API authorization, but is still a prototype and has not undergone a production security, privacy, compliance, or clinical review.
+This repository can be deployed as a **public synthetic-data demonstration**. It is not a clinical system and must not be used with real patient information. The application includes role-based sign-in and API authorization, but is still a prototype and has not undergone a production security, privacy, compliance, or clinical review.
 
 ## Backend service
 
@@ -20,8 +20,9 @@ Set these environment variables in the hosting provider's secret/configuration s
 | `MONGODB_DATABASE` | Database name, for example `healthpilot` |
 | `FRONTEND_ORIGINS` | Exact deployed frontend origin(s), comma-separated, such as `https://takecare.example.com` |
 | `INITIAL_ADMIN_NAME` | Optional name for the first administrator account |
-| `INITIAL_ADMIN_EMAIL` | Email for the bootstrap administrator; set with its password |
-| `INITIAL_ADMIN_PASSWORD` | Unique bootstrap password of at least 12 characters; set as a host secret |
+| `INITIAL_ADMIN_EMAIL` | Bootstrap administrator account ID, for example `admin@takecare` |
+| `INITIAL_ADMIN_PASSWORD` | Bootstrap password of at least 8 characters; set only as a host secret |
+| `ALLOW_PATIENT_REGISTRATION` | Defaults to `false`; set to `true` only if public patient self-registration is wanted |
 | `HOSPITAL_NAME` | Optional hospital name shown to signed-in patients |
 | `HOSPITAL_ADDRESS` | Optional hospital address |
 | `HOSPITAL_PHONE` | Optional hospital phone |
@@ -29,7 +30,9 @@ Set these environment variables in the hosting provider's secret/configuration s
 | `HOSPITAL_HOURS` | Optional visiting/operating hours |
 | `PORT` | Set by the hosting provider |
 
-Set both bootstrap admin credentials before deployment. The account is created on the first login/identity request when it does not already exist; changing these variables does not reset an existing account password. Patients can self-register. Administrators create staff accounts from the Staff or Add records pages, and create doctor or additional administrator accounts from Settings; doctor accounts must be linked to a doctor directory record. Administrators can narrow each account's visible pages within that role's permissions.
+Set both bootstrap admin credentials before deployment. The account is created during the first login when it does not already exist; changing these variables does not reset an existing account password. The initial deployment has one administrator account and public patient self-registration is disabled by default in the backend. Keep it disabled for an administrator-only demo. The frontend hides the registration option unless `VITE_ALLOW_PATIENT_REGISTRATION=true` is set at build time; the backend remains authoritative and also requires `ALLOW_PATIENT_REGISTRATION=true`. Administrators can create staff accounts from the Staff or Add records pages and doctor or additional administrator accounts from Settings; doctor accounts must be linked to a doctor directory record. Passwords for newly created accounts must be at least 8 characters. Prefer a unique password of 16 or more characters for the public administrator account; the minimum is a compatibility rule, not a strength recommendation.
+
+The supplied `admin@takecare` value is an account ID, not an email address for mail delivery. It is accepted for sign-in and bootstrap account creation. Do not store the administrator password in this repository, a frontend environment variable, or a committed `.env` file. If an administrator account with this ID already exists in the database, bootstrap does not change its password; use the existing password or a controlled password-reset procedure.
 
 Restrict the MongoDB database user to the application database and allow network access only from the backend host where possible. Never commit `.env` or put database credentials in frontend variables.
 
@@ -48,14 +51,25 @@ Publish `frontend/dist`. Configure `VITE_API_URL` to the backend's base URL **wi
 
 Add the frontend's exact origin to the backend's `FRONTEND_ORIGINS`; do not use `*`. Rebuild the frontend after changing `VITE_API_URL`.
 
+## Public demo deployment on Render and MongoDB Atlas
+
+1. Push the repository to GitHub. Create a MongoDB Atlas cluster and a database user with access only to the application database. Add the backend host's outbound IPs to the Atlas network access list; avoid allowing access from `0.0.0.0/0` where the host supports stable outbound IPs.
+2. In Render, create a **Web Service** from the repository root. Use Python 3.11, build command `pip install -r backend/requirements.txt`, and start command `gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT`. Add the backend environment variables from the table above. Set `INITIAL_ADMIN_EMAIL` to `admin@takecare`, set `INITIAL_ADMIN_PASSWORD` in Render's secret field to a unique strong password (16+ characters recommended), set `ALLOW_PATIENT_REGISTRATION=false`, and set `FRONTEND_ORIGINS` to the exact HTTPS URL of the static site after creating it. Set the Render health check path to `/health`.
+3. Create a **Static Site** in Render from the same repository with root directory `frontend`, build command `npm ci && npm run build`, and publish directory `dist`. Set `VITE_API_URL` to the backend service's HTTPS base URL without a trailing slash or `/api`; set `VITE_ALLOW_PATIENT_REGISTRATION=false`. Trigger a new deploy after setting these build variables.
+4. Add the static site's exact HTTPS origin (scheme and host, no path) to the backend's `FRONTEND_ORIGINS` environment variable, then redeploy the backend. Do not use a wildcard origin.
+5. Wait for both services to finish deploying. Open `https://<backend-host>/health`; it should return a healthy response. Open the static site, sign in as `admin@takecare` using the secret configured on the backend, and check the dashboard and Settings. The demo data is synthetic.
+6. Confirm HTTPS is active, registration is not offered, and the bootstrap password and MongoDB URI do not appear in the repository or built frontend. Configure provider-side backups and alerts before relying on the demo.
+
+For other hosts, apply the same settings: run the backend using the included `Procfile`, publish `frontend/dist`, set `VITE_API_URL` before building, and allow only the deployed frontend origin in `FRONTEND_ORIGINS`.
+
 ## Demo deployment checklist
 
 1. Create a hosted MongoDB database and a database user limited to that database. Configure the provider's network allowlist for the backend host.
-2. Deploy the backend from the repository root using the included `Procfile`, install `backend/requirements.txt`, and set the backend environment variables above. Use a unique bootstrap administrator password and keep it in the provider's secret store.
+2. Deploy the backend from the repository root using the included `Procfile`, install `backend/requirements.txt`, and set the backend environment variables above. Use a unique bootstrap administrator password and keep it in the provider's secret store. Leave `ALLOW_PATIENT_REGISTRATION=false` for an administrator-only demo.
 3. Deploy `frontend/dist` as a static site. Set `VITE_API_URL` to the backend base URL before building, or configure the host to serve the frontend and reverse-proxy `/api` and `/health` to the backend.
 4. Configure the static host's SPA fallback so application routes return `index.html`. Add only the deployed frontend origin to `FRONTEND_ORIGINS`, then rebuild/redeploy the frontend if its API URL changes.
 5. Visit the backend `/health` endpoint, sign in as the bootstrap administrator, and verify the dashboard and Staff directory load. Use only disposable synthetic records while testing role-specific access.
-6. Confirm the deployed site uses HTTPS and that no `.env` file, database URI, or bootstrap password is included in the frontend build or repository.
+6. Confirm the deployed site uses HTTPS and that no `.env` file, database URI, or bootstrap password is included in the frontend build or repository. Confirm unauthenticated API requests are rejected and patient registration returns `403`.
 
 ## Before hosting with real users
 

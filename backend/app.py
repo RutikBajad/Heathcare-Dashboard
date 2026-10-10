@@ -27,6 +27,10 @@ configured_origins = os.getenv(
 )
 FRONTEND_ORIGINS = {origin.strip().rstrip('/') for origin in configured_origins.split(',') if origin.strip()}
 SESSION_TTL_HOURS = 12
+MIN_PASSWORD_LENGTH = 8
+PATIENT_REGISTRATION_ENABLED = os.getenv('ALLOW_PATIENT_REGISTRATION', 'false').strip().lower() in {
+    '1', 'true', 'yes', 'on',
+}
 
 PAGE_IDS = (
     'overview', 'patients', 'diseases', 'doctors', 'staff', 'appointments', 'hospital-info',
@@ -221,8 +225,11 @@ def ensure_bootstrap_admin():
     password = os.getenv('INITIAL_ADMIN_PASSWORD', '')
     if not email and not password:
         return
-    if not email or len(password) < 12:
-        raise RuntimeError('Set both INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD (at least 12 characters).')
+    if not is_valid_account_identifier(email) or not is_valid_password(password):
+        raise RuntimeError(
+            f'Set a valid INITIAL_ADMIN_EMAIL identifier and INITIAL_ADMIN_PASSWORD '
+            f'(at least {MIN_PASSWORD_LENGTH} characters).'
+        )
     ensure_account_indexes()
     if database.accounts.find_one({'email': email}):
         return
@@ -371,6 +378,18 @@ def required_text(payload, field):
     return value.strip()
 
 
+def is_valid_account_identifier(value):
+    return isinstance(value, str) and re.fullmatch(r'[^@\s]+@[^@\s]+', value) is not None
+
+
+def is_valid_email(value):
+    return isinstance(value, str) and re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', value) is not None
+
+
+def is_valid_password(value):
+    return isinstance(value, str) and len(value) >= MIN_PASSWORD_LENGTH
+
+
 @app.after_request
 def add_cors_headers(response):
     origin = request.headers.get('Origin')
@@ -400,6 +419,8 @@ def health():
 def auth_register():
     if request.method == 'OPTIONS':
         return '', 204
+    if not PATIENT_REGISTRATION_ENABLED:
+        return jsonify({'error': 'Patient self-registration is disabled. Contact an administrator.'}), 403
     ensure_database()
     ensure_account_indexes()
     payload, error = json_body()
@@ -409,10 +430,10 @@ def auth_register():
     email = required_text(payload, 'email')
     password = payload.get('password')
     city = required_text(payload, 'city') or ''
-    if not name or not email or not isinstance(password, str) or len(password) < 12:
-        return jsonify({'error': 'Name, email, and a password of at least 12 characters are required.'}), 400
+    if not name or not email or not is_valid_password(password):
+        return jsonify({'error': f'Name, email, and a password of at least {MIN_PASSWORD_LENGTH} characters are required.'}), 400
     email = email.lower()
-    if not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email):
+    if not is_valid_email(email):
         return jsonify({'error': 'Enter a valid email address.'}), 400
     try:
         age = int(payload.get('age'))
@@ -513,13 +534,13 @@ def auth_accounts():
     email = required_text(payload, 'email')
     password = payload.get('password')
     role = required_text(payload, 'role')
-    if not name or not email or not isinstance(password, str) or len(password) < 12:
-        return jsonify({'error': 'Name, email, and a password of at least 12 characters are required.'}), 400
+    if not name or not email or not is_valid_password(password):
+        return jsonify({'error': f'Name, account ID, and a password of at least {MIN_PASSWORD_LENGTH} characters are required.'}), 400
     if role not in {'admin', 'doctor', 'staff'}:
         return jsonify({'error': 'Administrators can provision only admin, doctor, or staff accounts.'}), 400
     email = email.lower()
-    if not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email):
-        return jsonify({'error': 'Enter a valid email address.'}), 400
+    if not is_valid_account_identifier(email):
+        return jsonify({'error': 'Enter a valid account ID in name@domain format.'}), 400
     if database.accounts.find_one({'email': email}):
         return jsonify({'error': 'An account with this email already exists.'}), 409
     doctor_name = required_text(payload, 'doctorName')
