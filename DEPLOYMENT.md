@@ -1,6 +1,6 @@
 # Deployment
 
-This repository can be deployed as a **public synthetic-data demonstration**. It is not a clinical system and must not be used with real patient information. The application includes role-based sign-in and API authorization, but is still a prototype and has not undergone a production security, privacy, compliance, or clinical review.
+This repository can be deployed as a public demonstration. New MongoDB databases start without patient, doctor, appointment, disease, or assessment records; the administrator creates staff accounts, and staff can add patient and doctor directory records. It is not a clinical system and must not be used with real patient information. The application is still a prototype and has not undergone a production security, privacy, compliance, or clinical review.
 
 ## Backend service
 
@@ -30,11 +30,17 @@ Set these environment variables in the hosting provider's secret/configuration s
 | `HOSPITAL_HOURS` | Optional visiting/operating hours |
 | `PORT` | Set by the hosting provider |
 
-Set both bootstrap admin credentials before deployment. The account is created during the first login when it does not already exist; changing these variables does not reset an existing account password. The initial deployment has one administrator account and public patient self-registration is disabled by default in the backend. Keep it disabled for an administrator-only demo. The frontend hides the registration option unless `VITE_ALLOW_PATIENT_REGISTRATION=true` is set at build time; the backend remains authoritative and also requires `ALLOW_PATIENT_REGISTRATION=true`. Administrators can create staff accounts from the Staff or Add records pages and doctor or additional administrator accounts from Settings; doctor accounts must be linked to a doctor directory record. Passwords for newly created accounts must be at least 8 characters. Prefer a unique password of 16 or more characters for the public administrator account; the minimum is a compatibility rule, not a strength recommendation.
+Set both bootstrap admin credentials before deployment. The account is created during the first login when it does not already exist; changing these variables does not reset an existing account password. The initial deployment has one administrator account and public patient self-registration is disabled by default. The frontend hides the registration option unless `VITE_ALLOW_PATIENT_REGISTRATION=true` is set at build time; the backend remains authoritative and also requires `ALLOW_PATIENT_REGISTRATION=true`. Sign in as the administrator and create staff accounts from the Staff or Add records pages. Staff can create patient records, doctor directory records, appointments, and disease references. Doctor login accounts must be provisioned separately by an administrator in Settings and linked to a doctor directory record. Passwords for newly created accounts must be at least 8 characters. Prefer a unique password of 16 or more characters for the public administrator account; the minimum is a compatibility rule, not a strength recommendation.
 
 The supplied `admin@takecare` value is an account ID, not an email address for mail delivery. It is accepted for sign-in and bootstrap account creation. Do not store the administrator password in this repository, a frontend environment variable, or a committed `.env` file. If an administrator account with this ID already exists in the database, bootstrap does not change its password; use the existing password or a controlled password-reset procedure.
 
 Restrict the MongoDB database user to the application database and allow network access only from the backend host where possible. Never commit `.env` or put database credentials in frontend variables.
+
+### Viewing and clearing database records
+
+For MongoDB Atlas, open your project and cluster, select **Browse Collections** (sometimes labeled **Data Explorer**), then choose the configured `MONGODB_DATABASE` database. Application data is stored in collections such as `patients`, `doctors`, `appointments`, `diseases`, `accounts`, and `assessments`. Account password values are stored as password hashes, not plaintext.
+
+The application no longer seeds records when it connects. This prevents a fresh database from filling with sample patients and appointments. It does not automatically erase records already present in an existing database. To start completely empty, configure a new database name in `MONGODB_DATABASE` for the deployment. If you intend to clear an existing database, back it up first and remove only the intended demo records in Atlas Data Explorer; do not drop the database if it contains records you want to keep.
 
 ## Frontend service
 
@@ -57,8 +63,8 @@ Add the frontend's exact origin to the backend's `FRONTEND_ORIGINS`; do not use 
 2. In Render, create a **Web Service** from the repository root. Use Python 3.11, build command `pip install -r backend/requirements.txt`, and start command `gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT`. Add the backend environment variables from the table above. Set `INITIAL_ADMIN_EMAIL` to `admin@takecare`, set `INITIAL_ADMIN_PASSWORD` in Render's secret field to a unique strong password (16+ characters recommended), set `ALLOW_PATIENT_REGISTRATION=false`, and set `FRONTEND_ORIGINS` to the exact HTTPS URL of the static site after creating it. Set the Render health check path to `/health`.
 3. Create a **Static Site** in Render from the same repository with root directory `frontend`, build command `npm ci && npm run build`, and publish directory `dist`. Set `VITE_API_URL` to the backend service's HTTPS base URL without a trailing slash or `/api`; set `VITE_ALLOW_PATIENT_REGISTRATION=false`. Trigger a new deploy after setting these build variables.
 4. Add the static site's exact HTTPS origin (scheme and host, no path) to the backend's `FRONTEND_ORIGINS` environment variable, then redeploy the backend. Do not use a wildcard origin.
-5. Wait for both services to finish deploying. Open `https://<backend-host>/health`; it should return a healthy response. Open the static site, sign in as `admin@takecare` using the secret configured on the backend, and check the dashboard and Settings. The demo data is synthetic.
-6. Confirm HTTPS is active, registration is not offered, and the bootstrap password and MongoDB URI do not appear in the repository or built frontend. Configure provider-side backups and alerts before relying on the demo.
+5. Wait for both services to finish deploying. Open `https://<backend-host>/health`; it should return a healthy response. Open the static site, sign in as `admin@takecare` using the secret configured on the backend, and check the dashboard and Settings. The record directories should be empty until you add records.
+6. Confirm HTTPS is active, registration is not offered, and the bootstrap password and MongoDB URI do not appear in the repository or built frontend. Configure provider-side backups and alerts before adding records.
 
 For other hosts, apply the same settings: run the backend using the included `Procfile`, publish `frontend/dist`, set `VITE_API_URL` before building, and allow only the deployed frontend origin in `FRONTEND_ORIGINS`.
 

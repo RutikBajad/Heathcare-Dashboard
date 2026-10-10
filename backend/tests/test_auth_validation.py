@@ -38,6 +38,19 @@ class AuthValidationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         ensure_database.assert_not_called()
 
+    def test_database_check_only_connects_and_does_not_seed_records(self):
+        with patch.object(backend_app, 'mongo_client') as mongo_client:
+            with patch.object(backend_app, 'database') as database:
+                backend_app.ensure_database()
+
+        mongo_client.admin.command.assert_called_once_with('ping')
+        database.assert_not_called()
+
+    def test_staff_can_create_patient_and_doctor_records(self):
+        self.assertIn('patients', backend_app.ROLE_PAGES['staff'])
+        self.assertIn('doctors', backend_app.ROLE_PAGES['staff'])
+        self.assertIn('add-record', backend_app.ROLE_PAGES['staff'])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -44,43 +44,6 @@ ROLE_PAGES = {
     'admin': PAGE_IDS,
 }
 VALID_ROLES = tuple(ROLE_PAGES)
-NOTEBOOK_MODEL_PERFORMANCE = {
-    'model': 'Logistic Regression',
-    'accuracy': 0.8852459016393442,
-    'precision': 0.8387096774193549,
-    'recall': 0.9285714285714286,
-    'f1': 0.8813559322033898,
-    'rocAuc': 0.9664502164502166,
-    'rocCurve': [
-        {'fpr': 0.0, 'tpr': 0.0},
-        {'fpr': 0.0, 'tpr': 0.035714},
-        {'fpr': 0.0, 'tpr': 0.642857},
-        {'fpr': 0.030303, 'tpr': 0.642857},
-        {'fpr': 0.030303, 'tpr': 0.785714},
-        {'fpr': 0.060606, 'tpr': 0.785714},
-        {'fpr': 0.060606, 'tpr': 0.892857},
-        {'fpr': 0.151515, 'tpr': 0.892857},
-        {'fpr': 0.151515, 'tpr': 0.928571},
-        {'fpr': 0.181818, 'tpr': 0.928571},
-        {'fpr': 0.181818, 'tpr': 0.964286},
-        {'fpr': 0.30303, 'tpr': 0.964286},
-        {'fpr': 0.30303, 'tpr': 1.0},
-        {'fpr': 1.0, 'tpr': 1.0},
-    ],
-    'confusionMatrix': [[28, 5], [2, 26]],
-    'datasetSize': 303,
-    'testSize': 61,
-    'evaluation': 'Stratified 80/20 train-test split, random_state=42',
-    'source': 'notebooks/heart_disease_analysis.ipynb',
-    'modelComparisons': [
-        {'model': 'Logistic Regression', 'accuracy': 0.885246, 'precision': 0.838710, 'recall': 0.928571, 'f1': 0.881356, 'rocAuc': 0.966450},
-        {'model': 'KNN', 'accuracy': 0.885246, 'precision': 0.862069, 'recall': 0.892857, 'f1': 0.877193},
-        {'model': 'Naive Bayes', 'accuracy': 0.721311, 'precision': 0.641026, 'recall': 0.892857, 'f1': 0.746269},
-        {'model': 'Decision Tree', 'accuracy': 0.737705, 'precision': 0.676471, 'recall': 0.821429, 'f1': 0.741935},
-        {'model': 'Random Forest', 'accuracy': 0.868852, 'precision': 0.812500, 'recall': 0.928571, 'f1': 0.866667, 'rocAuc': 0.942641},
-    ],
-}
-
 mongo_client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=3000)
 database = mongo_client[MONGODB_DATABASE]
 
@@ -159,45 +122,6 @@ def utc_now():
 
 def ensure_database():
     mongo_client.admin.command('ping')
-    seeded_collections = (
-        ('patients', SEED_PATIENTS),
-        ('doctors', SEED_DOCTORS),
-        ('appointments', SEED_APPOINTMENTS),
-        ('diseases', SEED_DISEASES),
-        ('users', SEED_USERS),
-        ('search_history', SEED_SEARCH_HISTORY),
-    )
-    for collection_name, seed_records in seeded_collections:
-        collection = database[collection_name]
-        if collection.count_documents({}) == 0:
-            collection.insert_many(seed_records)
-    assessments = database.assessments
-    if assessments.count_documents({}) == 0:
-        for patient, input_values in zip(SEED_PATIENTS[:6], [
-            {'age': 52, 'sex': 1, 'cp': 2, 'trestbps': 138, 'chol': 235, 'fbs': 0, 'restecg': 1, 'thalach': 150, 'exang': 0, 'oldpeak': 1.1, 'slope': 2, 'ca': 0, 'thal': 3},
-            {'age': 46, 'sex': 0, 'cp': 3, 'trestbps': 124, 'chol': 210, 'fbs': 0, 'restecg': 0, 'thalach': 165, 'exang': 0, 'oldpeak': 0.4, 'slope': 1, 'ca': 0, 'thal': 3},
-            {'age': 64, 'sex': 1, 'cp': 4, 'trestbps': 150, 'chol': 280, 'fbs': 1, 'restecg': 2, 'thalach': 125, 'exang': 1, 'oldpeak': 2.3, 'slope': 2, 'ca': 2, 'thal': 7},
-            {'age': 37, 'sex': 0, 'cp': 2, 'trestbps': 118, 'chol': 190, 'fbs': 0, 'restecg': 0, 'thalach': 172, 'exang': 0, 'oldpeak': 0.2, 'slope': 1, 'ca': 0, 'thal': 3},
-            {'age': 58, 'sex': 1, 'cp': 3, 'trestbps': 142, 'chol': 245, 'fbs': 1, 'restecg': 1, 'thalach': 138, 'exang': 1, 'oldpeak': 1.8, 'slope': 2, 'ca': 1, 'thal': 6},
-            {'age': 29, 'sex': 0, 'cp': 1, 'trestbps': 112, 'chol': 175, 'fbs': 0, 'restecg': 0, 'thalach': 180, 'exang': 0, 'oldpeak': 0.0, 'slope': 1, 'ca': 0, 'thal': 3},
-        ], strict=True):
-            frame = pd.DataFrame([input_values])[model_feature_order]
-            prediction = int(model.predict(frame)[0])
-            probabilities = model.predict_proba(frame)[0]
-            assessments.insert_one({
-                'id': f"ASSESS-DEMO-{patient['id']}",
-                'model': 'heart-disease',
-                'patientId': patient['id'],
-                'patientName': patient['name'],
-                'inputs': input_values,
-                'prediction': prediction,
-                'class_names': ['No heart disease', 'Heart disease'],
-                'probability': float(probabilities[1]) if len(probabilities) > 1 else float(probabilities[0]),
-                'risk_level': 'High risk' if prediction == 1 else 'Low risk',
-                'confidence': round(float(max(probabilities) * 100), 1),
-                'createdAt': patient['lastVisit'],
-                'demoRecord': True,
-            })
 
 
 def public_account(account):
@@ -649,7 +573,7 @@ def dashboard_data():
     }) if patient and 'appointments' in allowed_pages else 0
     performance = None
     if role in {'doctor', 'admin'} and 'model-performance' in allowed_pages:
-        performance = database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)]) or NOTEBOOK_MODEL_PERFORMANCE
+        performance = database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)])
     staff_page_only = is_admin and 'staff' in allowed_pages and 'settings' not in allowed_pages
     users = records('users') if is_admin and {'settings', 'staff'} & allowed_pages else []
     accounts = records('accounts') if is_admin and {'settings', 'staff'} & allowed_pages else []
@@ -1019,7 +943,7 @@ def model_performance_api():
         return '', 204
     ensure_database()
     if request.method == 'GET':
-        return jsonify(database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)]) or NOTEBOOK_MODEL_PERFORMANCE)
+        return jsonify(database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)]))
     payload, error = json_body()
     if error:
         return error

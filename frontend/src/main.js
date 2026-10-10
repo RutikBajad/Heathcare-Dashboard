@@ -75,13 +75,6 @@ const rolePages = {
   admin: navItems.map((item) => item.id),
 };
 
-const recentActivity = [
-  { name: 'Ananya Iyer', action: 'Diabetes review scheduled', time: '18 min ago' },
-  { name: 'Rohan Mehta', action: 'Cardiology consultation requested', time: '42 min ago' },
-  { name: 'Dr. Aditi Rao', action: 'Cardiac follow-up completed', time: '1 hr ago' },
-  { name: 'Vikram Reddy', action: 'Kidney function review shared', time: '2 hrs ago' },
-];
-
 const chartPalette = {
   primary: '#0f766e',
   teal: '#2dd4bf',
@@ -651,7 +644,7 @@ function renderOverview() {
       <div class="hero-copy">
         <span class="hero-badge">Care pulse</span>
         <h2>Patient and care-team records are connected.</h2>
-        <p>Counts and charts use MongoDB records. Recent activity is illustrative demo content.</p>
+        <p>Counts and charts reflect records entered by your care team.</p>
         <div class="hero-actions">
           <button class="primary-button" type="button" data-action="view-alerts">View alerts${alertCount ? ` (${alertCount})` : ''}</button>
           <button class="secondary-button" type="button" data-action="download-summary">Download summary</button>
@@ -720,18 +713,7 @@ function renderOverview() {
           <button class="ghost-button" type="button">See all</button>
         </div>
         <ul class="list">
-          ${recentActivity.map((item) => `
-            <li class="activity-item">
-              <div class="activity-left">
-                <div class="avatar">${item.name.split(' ').map((part) => part[0]).slice(0,2).join('')}</div>
-                <div>
-                  <div>${item.name}</div>
-                  <div class="muted">${item.action}</div>
-                </div>
-              </div>
-              <span class="muted">${item.time}</span>
-            </li>
-          `).join('')}
+          <li class="muted">No activity to show yet. It will appear here as records are added.</li>
         </ul>
       </section>
     </div>
@@ -846,7 +828,7 @@ function renderDiseases() {
     <div class="page-header">
       <div>
         <h1 class="page-title">Disease reference</h1>
-        <p class="page-subtitle">Synthetic condition reference data linked to the demo patient records.</p>
+        <p class="page-subtitle">Manage the condition reference list used when adding patient records.</p>
       </div>
       <button class="primary-button" type="button" data-action="add-disease"><span>${renderIcon('plus')}</span> Add disease</button>
     </div>
@@ -862,7 +844,7 @@ function renderDiseases() {
     <section class="panel">
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>Condition</th><th>Category</th><th>Demo patients</th><th>Description</th></tr></thead>
+          <thead><tr><th>Condition</th><th>Category</th><th>Patients</th><th>Description</th></tr></thead>
           <tbody>
             ${state.diseases.map((disease) => {
               const patientCount = state.patientRecords.filter((patient) => (patient.conditions || []).includes(disease.id)).length;
@@ -1226,7 +1208,7 @@ function renderAssessment() {
           <tbody>
             ${state.assessments.map((assessment) => `
               <tr>
-                <td>${assessment.patientName || 'Demo assessment'}</td>
+                <td>${assessment.patientName || 'Unlinked assessment'}</td>
                 <td><span class="${getStatusClass(assessment.risk_level || 'Low risk')}">${assessment.risk_level || 'Unknown'}</span></td>
                 <td>${(Number(assessment.probability || 0) * 100).toFixed(1)}%</td>
                 <td>${assessment.createdAt ? new Date(assessment.createdAt).toLocaleDateString() : '—'}</td>
@@ -1242,6 +1224,7 @@ function renderAssessment() {
 
 function renderModelPerformance() {
   const performance = state.modelPerformance || {};
+  const hasEvaluation = Boolean(performance.model);
   const modelComparisons = Array.isArray(performance.modelComparisons) ? performance.modelComparisons : [];
   const confusionMatrix = Array.isArray(performance.confusionMatrix) && performance.confusionMatrix.length === 2
     && performance.confusionMatrix.every((row) => Array.isArray(row) && row.length === 2)
@@ -1264,20 +1247,20 @@ function renderModelPerformance() {
     <div class="page-header">
       <div>
         <h1 class="page-title">Model performance</h1>
-        <p class="page-subtitle">${notebookEvaluation ? 'Held-out evaluation results sourced from the heart disease analysis notebook.' : 'Published evaluation results for the heart disease model.'}</p>
+        <p class="page-subtitle">${hasEvaluation ? (notebookEvaluation ? 'Held-out evaluation results sourced from the heart disease analysis notebook.' : 'Published evaluation results for the heart disease model.') : 'Model evaluation results will appear here when published.'}</p>
       </div>
       <button class="secondary-button" type="button" data-action="refresh-data">Refresh metrics</button>
     </div>
     <section class="panel model-evaluation-summary model-performance-hero">
       <div>
         <span class="model-kicker">${renderIcon('activity')} Clinical decision support</span>
-        <h2 class="panel-title">${escapeHtml(performance.model || 'Heart disease model')}</h2>
-        <p class="muted">${escapeHtml(performance.evaluation || (notebookEvaluation ? 'Evaluation details unavailable' : 'Evaluation metrics published by an administrator.'))}</p>
+        <h2 class="panel-title">${escapeHtml(performance.model || 'No evaluation published')}</h2>
+        <p class="muted">${escapeHtml(performance.evaluation || (hasEvaluation ? 'Evaluation metrics published by an administrator.' : 'Publish validated evaluation results to display metrics here.'))}</p>
       </div>
       <div class="model-evaluation-meta">
         <span><strong>${Number(performance.datasetSize) || '—'}</strong><small>dataset records</small></span>
         <span><strong>${Number(performance.testSize) || '—'}</strong><small>held-out test records</small></span>
-        <span>Source: <code>${escapeHtml(performance.source || 'Saved evaluation')}</code></span>
+        <span>Source: <code>${escapeHtml(performance.source || (hasEvaluation ? 'Saved evaluation' : 'Not available'))}</code></span>
       </div>
     </section>
     <div class="grid model-metric-grid">
@@ -1559,7 +1542,7 @@ function renderSettings() {
           <a href="https://www.linkedin.com/in/rutikbajad/" target="_blank" rel="noopener noreferrer"><span>LinkedIn</span><strong>linkedin.com/in/rutikbajad</strong></a>
           <a href="mailto:rutikbajad9699@gmail.com"><span>Email</span><strong>rutikbajad9699@gmail.com</strong></a>
         </div>
-        <div class="placeholder-box" style="margin-top: 1rem;">Educational prototype only. Do not store real patient information until appropriate privacy, security, compliance, and clinical safeguards are in place. Some charts and activity content remain illustrative.</div>
+        <div class="placeholder-box" style="margin-top: 1rem;">Educational prototype only. Do not store real patient information until appropriate privacy, security, compliance, and clinical safeguards are in place. Dashboard charts reflect records currently stored in the database.</div>
       </section>
     </div>
   `;
