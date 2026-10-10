@@ -40,6 +40,42 @@ ROLE_PAGES = {
     'admin': PAGE_IDS,
 }
 VALID_ROLES = tuple(ROLE_PAGES)
+NOTEBOOK_MODEL_PERFORMANCE = {
+    'model': 'Logistic Regression',
+    'accuracy': 0.8852459016393442,
+    'precision': 0.8387096774193549,
+    'recall': 0.9285714285714286,
+    'f1': 0.8813559322033898,
+    'rocAuc': 0.9664502164502166,
+    'rocCurve': [
+        {'fpr': 0.0, 'tpr': 0.0},
+        {'fpr': 0.0, 'tpr': 0.035714},
+        {'fpr': 0.0, 'tpr': 0.642857},
+        {'fpr': 0.030303, 'tpr': 0.642857},
+        {'fpr': 0.030303, 'tpr': 0.785714},
+        {'fpr': 0.060606, 'tpr': 0.785714},
+        {'fpr': 0.060606, 'tpr': 0.892857},
+        {'fpr': 0.151515, 'tpr': 0.892857},
+        {'fpr': 0.151515, 'tpr': 0.928571},
+        {'fpr': 0.181818, 'tpr': 0.928571},
+        {'fpr': 0.181818, 'tpr': 0.964286},
+        {'fpr': 0.30303, 'tpr': 0.964286},
+        {'fpr': 0.30303, 'tpr': 1.0},
+        {'fpr': 1.0, 'tpr': 1.0},
+    ],
+    'confusionMatrix': [[28, 5], [2, 26]],
+    'datasetSize': 303,
+    'testSize': 61,
+    'evaluation': 'Stratified 80/20 train-test split, random_state=42',
+    'source': 'notebooks/heart_disease_analysis.ipynb',
+    'modelComparisons': [
+        {'model': 'Logistic Regression', 'accuracy': 0.885246, 'precision': 0.838710, 'recall': 0.928571, 'f1': 0.881356, 'rocAuc': 0.966450},
+        {'model': 'KNN', 'accuracy': 0.885246, 'precision': 0.862069, 'recall': 0.892857, 'f1': 0.877193},
+        {'model': 'Naive Bayes', 'accuracy': 0.721311, 'precision': 0.641026, 'recall': 0.892857, 'f1': 0.746269},
+        {'model': 'Decision Tree', 'accuracy': 0.737705, 'precision': 0.676471, 'recall': 0.821429, 'f1': 0.741935},
+        {'model': 'Random Forest', 'accuracy': 0.868852, 'precision': 0.812500, 'recall': 0.928571, 'f1': 0.866667, 'rocAuc': 0.942641},
+    ],
+}
 
 mongo_client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=3000)
 database = mongo_client[MONGODB_DATABASE]
@@ -528,7 +564,7 @@ def hospital_info_api():
     if request.method == 'OPTIONS':
         return '', 204
     return jsonify({
-        'name': os.getenv('HOSPITAL_NAME', 'HealthPilot Community Hospital'),
+        'name': os.getenv('HOSPITAL_NAME', 'TakeCare Community Hospital'),
         'address': os.getenv('HOSPITAL_ADDRESS', 'Contact the hospital for location information.'),
         'phone': os.getenv('HOSPITAL_PHONE', 'Contact the hospital for phone information.'),
         'email': os.getenv('HOSPITAL_EMAIL', 'Contact the hospital for email information.'),
@@ -554,7 +590,9 @@ def dashboard_data():
         'patientId': patient['id'],
         'date': today,
     }) if patient and 'appointments' in allowed_pages else 0
-    performance = database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)]) if role in {'doctor', 'admin'} and 'model-performance' in allowed_pages else None
+    performance = None
+    if role in {'doctor', 'admin'} and 'model-performance' in allowed_pages:
+        performance = database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)]) or NOTEBOOK_MODEL_PERFORMANCE
     staff_page_only = is_admin and 'staff' in allowed_pages and 'settings' not in allowed_pages
     users = records('users') if is_admin and {'settings', 'staff'} & allowed_pages else []
     accounts = records('accounts') if is_admin and {'settings', 'staff'} & allowed_pages else []
@@ -888,7 +926,7 @@ def model_performance_api():
         return '', 204
     ensure_database()
     if request.method == 'GET':
-        return jsonify(database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)]) or {})
+        return jsonify(database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)]) or NOTEBOOK_MODEL_PERFORMANCE)
     payload, error = json_body()
     if error:
         return error

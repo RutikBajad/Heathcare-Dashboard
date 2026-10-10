@@ -18,7 +18,7 @@ Set these environment variables in the hosting provider's secret/configuration s
 | --- | --- |
 | `MONGODB_URI` | Connection string for a hosted MongoDB deployment; do not use localhost |
 | `MONGODB_DATABASE` | Database name, for example `healthpilot` |
-| `FRONTEND_ORIGINS` | Exact deployed frontend origin(s), comma-separated, such as `https://healthpilot.example.com` |
+| `FRONTEND_ORIGINS` | Exact deployed frontend origin(s), comma-separated, such as `https://takecare.example.com` |
 | `INITIAL_ADMIN_NAME` | Optional name for the first administrator account |
 | `INITIAL_ADMIN_EMAIL` | Email for the bootstrap administrator; set with its password |
 | `INITIAL_ADMIN_PASSWORD` | Unique bootstrap password of at least 12 characters; set as a host secret |
@@ -44,7 +44,7 @@ npm run build
 
 Use Node.js `^20.19.0` or `>=22.12.0` for the Vite 8 build.
 
-Publish `frontend/dist`. Configure `VITE_API_URL` to the backend's base URL **without** a trailing slash or `/api` (for example, `https://healthpilot-api.example.com`). Vite embeds this value into the built JavaScript, so set it before building. For a same-origin deployment that reverse-proxies `/api` and `/health` to the backend, leave `VITE_API_URL` unset.
+Publish `frontend/dist`. Configure `VITE_API_URL` to the backend's base URL **without** a trailing slash or `/api` (for example, `https://takecare-api.example.com`). Vite embeds this value into the built JavaScript, so set it before building. For a same-origin deployment that reverse-proxies `/api` and `/health` to the backend, leave `VITE_API_URL` unset.
 
 Add the frontend's exact origin to the backend's `FRONTEND_ORIGINS`; do not use `*`. Rebuild the frontend after changing `VITE_API_URL`.
 

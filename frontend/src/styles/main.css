@@ -165,14 +165,6 @@ html[data-theme='dark'] .sidebar {
   border-bottom: 1px solid var(--border);
 }
 
-.logo-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 9999px;
-  background: linear-gradient(135deg, var(--primary), #14b8a6);
-  box-shadow: 0 0 0 6px rgba(15, 118, 110, 0.12);
-}
-
 .nav-list {
   display: flex;
   flex-direction: column;
@@ -921,6 +913,143 @@ html[data-theme='dark'] .appointment-card {
   font-size: 0.82rem;
 }
 
+.model-evaluation-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.model-evaluation-summary .panel-title,
+.model-evaluation-summary p {
+  margin-top: 0;
+}
+
+.model-evaluation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.model-evaluation-meta span {
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.model-evaluation-meta strong {
+  color: var(--text);
+}
+
+.model-evaluation-meta code {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.model-comparison-panel {
+  margin-bottom: 1.25rem;
+}
+
+.model-comparison-panel .panel-header {
+  align-items: flex-start;
+}
+
+.model-comparison-panel .panel-title,
+.model-comparison-panel .muted {
+  margin-top: 0;
+}
+
+.model-comparison-selected {
+  background: var(--primary-soft);
+}
+
+.model-performance-charts > .panel {
+  min-width: 0;
+}
+
+.model-performance-charts .chart-box {
+  min-width: 0;
+}
+
+.model-performance-charts canvas {
+  max-width: 100%;
+}
+
+.confusion-matrix-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.confusion-matrix {
+  width: 100%;
+  min-width: 340px;
+  border-collapse: separate;
+  border-spacing: 0.55rem;
+  text-align: center;
+}
+
+.confusion-matrix caption {
+  padding: 0.25rem 0 0.75rem;
+  color: var(--text-soft);
+  text-align: left;
+  font-size: 0.84rem;
+}
+
+.confusion-matrix th {
+  padding: 0.5rem;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.confusion-matrix tbody th {
+  width: 6rem;
+  text-align: left;
+}
+
+.confusion-matrix td {
+  width: 50%;
+  padding: 0;
+}
+
+.confusion-cell {
+  display: flex;
+  min-height: 6rem;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  text-align: left;
+}
+
+.confusion-cell span {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+}
+
+.confusion-cell strong {
+  color: var(--text);
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.confusion-cell.correct {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.28);
+}
+
+.confusion-cell.error {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
 .doctor-info,
 .patient-info,
 .header-inline {
@@ -1078,6 +1207,22 @@ html[data-theme='dark'] .appointment-card {
     align-items: flex-start;
   }
 
+  .model-evaluation-summary {
+    flex-direction: column;
+  }
+
+  .model-evaluation-meta {
+    justify-content: flex-start;
+  }
+
+  .model-comparison-panel .table-wrap {
+    overflow-x: auto;
+  }
+
+  .model-performance-charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .topbar {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -1110,5 +1255,60 @@ html[data-theme='dark'] .appointment-card {
   .grid-2,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+.alerts-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.alerts-dialog {
+  width: min(100%, 38rem);
+  max-height: min(80vh, 42rem);
+  overflow: auto;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+}
+
+.alerts-dialog .panel-header {
+  align-items: flex-start;
+}
+
+.alerts-list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 52vh;
+  overflow-y: auto;
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+}
+
+.alert-item p {
+  margin: 0.3rem 0 0;
+}
+
+@media (max-width: 600px) {
+  .alerts-overlay {
+    padding: 0.5rem;
+  }
+
+  .alerts-dialog {
+    max-height: 90vh;
   }
 }

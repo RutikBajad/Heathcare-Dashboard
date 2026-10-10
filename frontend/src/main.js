@@ -36,6 +36,7 @@ const state = {
   searchResults: null,
   searchFeedback: '',
   selectedRecord: null,
+  alertsOpen: false,
   dataError: '',
   dataNotice: '',
 };
@@ -88,8 +89,8 @@ function renderAuthPage() {
     <main class="auth-shell">
       <section class="panel auth-panel">
         <div class="logo-mark">
-          <div class="logo-dot"></div>
-          <div><strong>HealthPilot</strong><div class="muted">Secure care dashboard</div></div>
+          <img class="logo-symbol" src="/takecare-logo.svg" alt="" />
+          <strong>TakeCare</strong>
         </div>
         <h1 class="page-title">${isRegister ? 'Create a patient account' : 'Welcome back'}</h1>
         <p class="page-subtitle">${isRegister ? 'Register to request and manage your appointments.' : 'Sign in with your account to continue.'}</p>
@@ -313,7 +314,126 @@ function getAppointmentWeekdayCounts() {
   return counts;
 }
 
+function getDashboardAlerts() {
+  const patientAlerts = state.patientRecords
+    .filter((patient) => /high|critical/i.test(`${patient.risk || ''} ${patient.status || ''}`))
+    .map((patient) => ({
+      severity: /critical/i.test(patient.status || '') ? 'Critical' : 'High priority',
+      title: patient.name,
+      description: `Risk: ${patient.risk || 'Not specified'} · Status: ${patient.status || 'Not specified'}`,
+    }));
+  const appointmentAlerts = state.appointments
+    .filter((appointment) => /pending|rescheduled/i.test(appointment.status || ''))
+    .map((appointment) => ({
+      severity: 'Needs follow-up',
+      title: `${appointment.status} appointment`,
+      description: `${appointment.patient || 'Patient not specified'} · ${appointment.date || 'Date not set'}${appointment.doctor ? ` · ${appointment.doctor}` : ''}`,
+    }));
+  return [...patientAlerts, ...appointmentAlerts];
+}
+
+function downloadFile(filename, content, type) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function getDateStamp() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function downloadDashboardSummary() {
+  const alerts = getDashboardAlerts();
+  const highRiskPatients = state.patientRecords.filter((patient) => /high|critical/i.test(`${patient.risk || ''} ${patient.status || ''}`)).length;
+  const appointmentStatuses = ['Pending', 'Confirmed', 'Completed', 'Rescheduled', 'Cancelled']
+    .map((status) => `${status}: ${state.appointments.filter((appointment) => (appointment.status || '').toLowerCase() === status.toLowerCase()).length}`);
+  const lines = [
+    'TakeCare dashboard summary',
+    `Generated: ${new Date().toLocaleString()}`,
+    '',
+    'Overview',
+    `Patients: ${state.patientRecords.length}`,
+    `Doctors: ${state.doctors.length}`,
+    `Appointments: ${state.appointments.length}`,
+    `Saved assessments: ${state.assessments.length}`,
+    `High-risk or critical patients: ${highRiskPatients}`,
+    '',
+    'Appointment status',
+    ...appointmentStatuses,
+    '',
+    `Alerts requiring review: ${alerts.length}`,
+    ...(alerts.length
+      ? alerts.map((alert) => `- ${alert.severity}: ${alert.title} — ${alert.description}`)
+      : ['- No alerts require review.']),
+  ];
+  downloadFile(`takecare-summary-${getDateStamp()}.txt`, lines.join('\n'), 'text/plain;charset=utf-8');
+}
+
+function exportDashboardReport() {
+  const columns = ['Record type', 'Record ID', 'Name or patient', 'Age', 'Date', 'Time', 'Doctor', 'Status', 'Risk or result', 'Details'];
+  const rows = [
+    ...state.patientRecords.map((patient) => [
+      'Patient', patient.id, patient.name, patient.age, patient.lastVisit, '', '', patient.status,
+      patient.risk, [patient.city, patient.gender, ...(patient.conditions || [])].filter(Boolean).join('; '),
+    ]),
+    ...state.doctors.map((doctor) => [
+      'Doctor', doctor.id, doctor.name, '', '', '', '', doctor.status,
+      doctor.specialty || doctor.specialization, doctor.department || doctor.email,
+    ]),
+    ...state.appointments.map((appointment) => [
+      'Appointment', appointment.id, appointment.patient, '', appointment.date, appointment.time,
+      appointment.doctor, appointment.status, '', appointment.reason,
+    ]),
+    ...state.assessments.map((assessment) => [
+      'Assessment', assessment.id, assessment.patientName, '', assessment.createdAt || assessment.created_at,
+      '', '', assessment.risk_level, assessment.prediction, `Probability: ${assessment.probability ?? ''}`,
+    ]),
+  ];
+  const csvCell = (value) => {
+    let text = Array.isArray(value) ? value.join('; ') : String(value ?? '');
+    if (typeof value === 'string' && /^[\t\r ]*[=+\-@]/.test(text)) text = `'${text}`;
+    return `"${text.replace(/"/g, '""')}"`;
+  };
+  const csv = [columns, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+  downloadFile(`takecare-report-${getDateStamp()}.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
+}
+
+function renderAlertsDialog() {
+  const alerts = getDashboardAlerts();
+  return `
+    <div class="alerts-overlay" data-action="dismiss-alerts">
+      <section class="panel alerts-dialog" role="dialog" aria-modal="true" aria-labelledby="alerts-title">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title" id="alerts-title">Alerts requiring review</h2>
+            <p class="muted">${alerts.length} alert${alerts.length === 1 ? '' : 's'} from current dashboard records</p>
+          </div>
+          <button class="icon-button" type="button" data-action="close-alerts" aria-label="Close alerts">×</button>
+        </div>
+        ${alerts.length ? `
+          <ul class="alerts-list">
+            ${alerts.map((alert) => `
+              <li class="alert-item">
+                <span class="${alert.severity === 'Critical' ? 'badge badge-danger' : 'badge badge-warning'}">${escapeHtml(alert.severity)}</span>
+                <div><strong>${escapeHtml(alert.title)}</strong><p class="muted">${escapeHtml(alert.description)}</p></div>
+              </li>
+            `).join('')}
+          </ul>
+        ` : '<div class="placeholder-box">No high-risk patients or pending appointments need review.</div>'}
+        <div class="form-actions"><button class="secondary-button" type="button" data-action="close-alerts">Close</button></div>
+      </section>
+    </div>
+  `;
+}
+
 function renderOverview() {
+  const alertCount = getDashboardAlerts().length;
   const kpis = [
     { label: 'Patients', value: state.patientRecords.length, change: 'MongoDB records', icon: 'users' },
     { label: 'Doctors', value: state.doctors.length, change: 'MongoDB records', icon: 'doctors' },
@@ -327,7 +447,7 @@ function renderOverview() {
         <h1 class="page-title">Clinical overview</h1>
         <p class="page-subtitle">MongoDB-backed snapshot of current patients, care teams, and appointments.</p>
       </div>
-      <button class="primary-button" type="button"><span>${renderIcon('plus')}</span> Export report</button>
+      <button class="primary-button" type="button" data-action="export-report"><span>${renderIcon('plus')}</span> Export report</button>
     </div>
     <section class="overview-hero">
       <div class="hero-copy">
@@ -335,8 +455,8 @@ function renderOverview() {
         <h2>Patient and care-team records are connected.</h2>
         <p>Counts and charts use MongoDB records. Recent activity is illustrative demo content.</p>
         <div class="hero-actions">
-          <button class="primary-button" type="button">View alerts</button>
-          <button class="secondary-button" type="button">Download summary</button>
+          <button class="primary-button" type="button" data-action="view-alerts">View alerts${alertCount ? ` (${alertCount})` : ''}</button>
+          <button class="secondary-button" type="button" data-action="download-summary">Download summary</button>
         </div>
       </div>
       <div class="hero-metrics">
@@ -874,6 +994,13 @@ function renderAssessment() {
 
 function renderModelPerformance() {
   const performance = state.modelPerformance || {};
+  const modelComparisons = Array.isArray(performance.modelComparisons) ? performance.modelComparisons : [];
+  const confusionMatrix = Array.isArray(performance.confusionMatrix) && performance.confusionMatrix.length === 2
+    && performance.confusionMatrix.every((row) => Array.isArray(row) && row.length === 2)
+    ? performance.confusionMatrix
+    : null;
+  const notebookEvaluation = performance.source === 'notebooks/heart_disease_analysis.ipynb';
+  const metricValue = (value) => value !== undefined && value !== null && Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(1)}%` : '—';
   const metrics = [
     { label: 'Accuracy', value: performance.accuracy },
     { label: 'Precision', value: performance.precision },
@@ -886,10 +1013,21 @@ function renderModelPerformance() {
     <div class="page-header">
       <div>
         <h1 class="page-title">Model performance</h1>
-        <p class="page-subtitle">Evaluation metrics stored in MongoDB. No metrics are fabricated when an evaluation has not been saved.</p>
+        <p class="page-subtitle">${notebookEvaluation ? 'Held-out evaluation results sourced from the heart disease analysis notebook.' : 'Published evaluation results for the heart disease model.'}</p>
       </div>
       <button class="secondary-button" type="button" data-action="refresh-data">Refresh metrics</button>
     </div>
+    <section class="panel model-evaluation-summary">
+      <div>
+        <h2 class="panel-title">${escapeHtml(performance.model || 'Heart disease model')}</h2>
+        <p class="muted">${escapeHtml(performance.evaluation || (notebookEvaluation ? 'Evaluation details unavailable' : 'Evaluation metrics published by an administrator.'))}</p>
+      </div>
+      <div class="model-evaluation-meta">
+        <span><strong>${Number(performance.datasetSize) || '—'}</strong> dataset records</span>
+        <span><strong>${Number(performance.testSize) || '—'}</strong> held-out test records</span>
+        <span>Source: <code>${escapeHtml(performance.source || 'Saved evaluation')}</code></span>
+      </div>
+    </section>
     <div class="grid grid-3" style="margin-bottom: 1.25rem;">
       ${metrics.map((metric) => `
         <article class="stat-card">
@@ -897,23 +1035,73 @@ function renderModelPerformance() {
             <span>${metric.label}</span>
             <span class="stat-icon">${renderIcon('chart')}</span>
           </div>
-          <p class="stat-value">${metric.value !== undefined && metric.value !== null && Number.isFinite(Number(metric.value)) ? `${(Number(metric.value) * 100).toFixed(1)}%` : 'No data'}</p>
-          <div class="muted">${performance.createdAt ? `Updated ${new Date(performance.createdAt).toLocaleString()}` : 'No evaluation saved'}</div>
+          <p class="stat-value">${metricValue(metric.value)}</p>
+          <div class="muted">Held-out test set</div>
         </article>
       `).join('')}
     </div>
-    <div class="grid grid-2">
+    ${modelComparisons.length ? `
+      <section class="panel model-comparison-panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Notebook model comparison</h2>
+            <p class="muted">Metrics use the same stratified test split. The shipped prediction model is highlighted.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Model</th><th>Accuracy</th><th>Precision</th><th>Recall</th><th>F1 score</th><th>ROC-AUC</th></tr></thead>
+            <tbody>${modelComparisons.map((result) => `
+              <tr class="${result.model === performance.model ? 'model-comparison-selected' : ''}">
+                <td><strong>${escapeHtml(result.model)}</strong>${result.model === performance.model ? ' <span class="value-pill">Deployed</span>' : ''}</td>
+                <td>${metricValue(result.accuracy)}</td>
+                <td>${metricValue(result.precision)}</td>
+                <td>${metricValue(result.recall)}</td>
+                <td>${metricValue(result.f1)}</td>
+                <td>${metricValue(result.rocAuc)}</td>
+              </tr>
+            `).join('')}</tbody>
+          </table>
+        </div>
+      </section>
+    ` : ''}
+    <div class="grid grid-2 model-performance-charts">
       <section class="panel">
         <div class="panel-header">
           <h2 class="panel-title">ROC curve</h2>
         </div>
-        ${Array.isArray(performance.rocCurve) && performance.rocCurve.length ? '<div class="chart-box"><canvas data-chart="rocCurve"></canvas></div>' : '<div class="placeholder-box">ROC curve data has not been saved.</div>'}
+        ${Array.isArray(performance.rocCurve) && performance.rocCurve.length ? '<div class="chart-box"><canvas data-chart="rocCurve"></canvas></div>' : '<div class="placeholder-box">ROC curve data is not available.</div>'}
       </section>
       <section class="panel">
         <div class="panel-header">
           <h2 class="panel-title">Confusion matrix</h2>
         </div>
-        ${Array.isArray(performance.confusionMatrix) && performance.confusionMatrix.length ? '<div class="chart-box"><canvas data-chart="confusionMatrix"></canvas></div>' : '<div class="placeholder-box">Confusion matrix data has not been saved.</div>'}
+        ${confusionMatrix ? `
+          <div class="confusion-matrix-wrap">
+            <table class="confusion-matrix" aria-label="Confusion matrix of actual and predicted heart disease">
+              <caption>Prediction counts by actual and predicted diagnosis</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Actual / Predicted</th>
+                  <th scope="col">No disease</th>
+                  <th scope="col">Disease</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">No disease</th>
+                  <td><div class="confusion-cell correct"><span>True negative</span><strong>${escapeHtml(confusionMatrix[0][0])}</strong></div></td>
+                  <td><div class="confusion-cell error"><span>False positive</span><strong>${escapeHtml(confusionMatrix[0][1])}</strong></div></td>
+                </tr>
+                <tr>
+                  <th scope="row">Disease</th>
+                  <td><div class="confusion-cell error"><span>False negative</span><strong>${escapeHtml(confusionMatrix[1][0])}</strong></div></td>
+                  <td><div class="confusion-cell correct"><span>True positive</span><strong>${escapeHtml(confusionMatrix[1][1])}</strong></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ` : '<div class="placeholder-box">Confusion matrix data is not available.</div>'}
       </section>
     </div>
   `;
@@ -1100,7 +1288,7 @@ function renderSettings() {
         <div class="panel-header">
           <h2 class="panel-title">About the project</h2>
         </div>
-        <p class="muted">HealthPilot is a prototype using a MongoDB-backed Flask API and the saved heart disease model. Patient, doctor, appointment, search, profile, assessment, and model-performance records are stored in MongoDB.</p>
+        <p class="muted">TakeCare is a prototype using a MongoDB-backed Flask API and the saved heart disease model. Patient, doctor, appointment, search, profile, assessment, and model-performance records are stored in MongoDB.</p>
         <div class="placeholder-box" style="margin-top: 1rem;">Educational prototype only. Do not store real patient information until appropriate privacy, security, compliance, and clinical safeguards are in place. Some charts and activity content remain illustrative.</div>
       </section>
     </div>
@@ -1111,10 +1299,9 @@ function renderSidebar() {
   return `
     <aside class="sidebar" id="sidebar" aria-hidden="${!state.sidebarOpen}">
       <div class="logo-mark">
-        <div class="logo-dot"></div>
+        <img class="logo-symbol" src="/takecare-logo.svg" alt="" />
         <div>
-          <div style="font-weight: 700;">HealthPilot</div>
-          <div class="muted" style="font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;">Clinical Intelligence</div>
+          <div style="font-weight: 700;">TakeCare</div>
         </div>
       </div>
       <nav class="nav-list" aria-label="Sidebar navigation">
@@ -1131,7 +1318,7 @@ function renderSidebar() {
           <strong>System health</strong>
           <span class="value-pill">Stable</span>
         </div>
-        <div class="muted" style="margin-top: 0.75rem;">2 alerts pending review</div>
+        <div class="muted" style="margin-top: 0.75rem;">${getDashboardAlerts().length} alerts to review</div>
       </div>
     </aside>
   `;
@@ -1200,6 +1387,7 @@ function renderContent() {
           ${pages[state.currentPage] || renderOverview()}
         </main>
       </div>
+      ${state.alertsOpen ? renderAlertsDialog() : ''}
     </div>
   `;
 }
@@ -1439,34 +1627,6 @@ function drawCharts() {
       },
     });
   }
-  if (Array.isArray(performance.confusionMatrix) && performance.confusionMatrix.length === 2) {
-    const [[trueNegative, falsePositive], [falseNegative, truePositive]] = performance.confusionMatrix;
-    chartDefinitions.push({
-      id: 'confusionMatrix',
-      config: {
-        type: 'bar',
-        data: {
-          labels: ['Actual negative', 'Actual positive'],
-          datasets: [{
-            label: 'Predicted negative',
-            data: [trueNegative, falseNegative],
-            backgroundColor: chartPalette.blue,
-          }, {
-            label: 'Predicted positive',
-            data: [falsePositive, truePositive],
-            backgroundColor: chartPalette.primary,
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom' } },
-          scales: { x: { grid: { display: false } }, y: { grid: { display: false } } },
-        },
-      },
-    });
-  }
-
   destroyCharts();
   chartDefinitions.forEach(({ id, config }) => {
     const canvas = document.querySelector(`[data-chart="${id}"]`);
@@ -1477,6 +1637,30 @@ function drawCharts() {
 }
 
 function bindEvents() {
+  document.querySelector('[data-action="view-alerts"]')?.addEventListener('click', () => {
+    state.alertsOpen = true;
+    render();
+    document.querySelector('[data-action="close-alerts"]')?.focus();
+  });
+
+  document.querySelectorAll('[data-action="close-alerts"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.alertsOpen = false;
+      render();
+      document.querySelector('[data-action="view-alerts"]')?.focus();
+    });
+  });
+
+  document.querySelector('.alerts-overlay')?.addEventListener('click', (event) => {
+    if (event.target !== event.currentTarget) return;
+    state.alertsOpen = false;
+    render();
+    document.querySelector('[data-action="view-alerts"]')?.focus();
+  });
+
+  document.querySelector('[data-action="download-summary"]')?.addEventListener('click', downloadDashboardSummary);
+  document.querySelector('[data-action="export-report"]')?.addEventListener('click', exportDashboardReport);
+
   document.getElementById('auth-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -1921,6 +2105,27 @@ window.matchMedia('(max-width: 1024px)').addEventListener('change', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Tab' && state.alertsOpen) {
+    const dialog = document.querySelector('.alerts-dialog');
+    const focusable = dialog ? Array.from(dialog.querySelectorAll('button:not([disabled]), a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])')) : [];
+    if (focusable.length) {
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  }
+  if (event.key === 'Escape' && state.alertsOpen) {
+    state.alertsOpen = false;
+    render();
+    document.querySelector('[data-action="view-alerts"]')?.focus();
+    return;
+  }
   if (event.key === 'Escape' && state.sidebarOpen && window.matchMedia('(max-width: 1024px)').matches) {
     state.sidebarOpen = false;
     render();
