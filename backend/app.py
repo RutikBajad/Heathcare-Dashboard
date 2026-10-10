@@ -29,9 +29,10 @@ FRONTEND_ORIGINS = {origin.strip().rstrip('/') for origin in configured_origins.
 SESSION_TTL_HOURS = 12
 
 PAGE_IDS = (
-    'overview', 'patients', 'diseases', 'doctors', 'appointments', 'hospital-info',
+    'overview', 'patients', 'diseases', 'doctors', 'staff', 'appointments', 'hospital-info',
     'add-record', 'analytics', 'ml-assessment', 'model-performance', 'settings',
 )
+LEGACY_ADMIN_PAGE_IDS = tuple(page for page in PAGE_IDS if page != 'staff')
 ROLE_PAGES = {
     'patient': ('appointments', 'hospital-info', 'doctors', 'settings'),
     'doctor': ('patients', 'diseases', 'appointments', 'ml-assessment', 'model-performance'),
@@ -171,6 +172,13 @@ def public_account(account):
     }
 
 
+def migrate_legacy_admin_pages(account):
+    if account['role'] == 'admin' and set(account.get('allowedPages', ())) == set(LEGACY_ADMIN_PAGE_IDS):
+        account['allowedPages'] = list(ROLE_PAGES['admin'])
+        database.accounts.update_one({'id': account['id']}, {'$set': {'allowedPages': account['allowedPages']}})
+    return account
+
+
 def ensure_bootstrap_admin():
     email = os.getenv('INITIAL_ADMIN_EMAIL', '').strip().lower()
     password = os.getenv('INITIAL_ADMIN_PASSWORD', '')
@@ -228,7 +236,7 @@ def authenticate_api_request():
     account = database.accounts.find_one({'id': session['userId']})
     if not account:
         return jsonify({'error': 'This account is no longer available.'}), 401
-    g.current_user = account
+    g.current_user = migrate_legacy_admin_pages(account)
 
     endpoint = request.endpoint
     method = request.method
@@ -263,9 +271,13 @@ def authenticate_api_request():
     if (endpoint, method) not in page_by_request:
         return jsonify({'error': 'This operation is not available.'}), 403
     required_page = page_by_request[(endpoint, method)]
+    allowed_pages = account.get('allowedPages', list(ROLE_PAGES[account['role']]))
+    if endpoint == 'auth_accounts' and method == 'POST' and account['role'] == 'admin':
+        required_page = 'settings' if 'settings' in allowed_pages else 'add-record'
+    if endpoint == 'auth_accounts' and method == 'GET' and account['role'] == 'admin' and 'settings' not in allowed_pages:
+        required_page = 'staff'
     if endpoint == 'diseases_api' and method == 'POST' and account['role'] == 'staff':
         required_page = 'add-record'
-    allowed_pages = account.get('allowedPages', list(ROLE_PAGES[account['role']]))
     if required_page and required_page not in allowed_pages:
         return jsonify({'error': 'Your account does not have access to this page.'}), 403
 
@@ -413,6 +425,7 @@ def auth_login():
     account = database.accounts.find_one({'email': email.lower()})
     if not account or not check_password_hash(account['passwordHash'], password):
         return jsonify({'error': 'Email or password is incorrect.'}), 401
+    account = migrate_legacy_admin_pages(account)
     return jsonify({'token': create_session(account), 'user': public_account(account)})
 
 
@@ -442,7 +455,10 @@ def auth_accounts():
     ensure_database()
     ensure_account_indexes()
     if request.method == 'GET':
-        return jsonify([public_account(account) for account in records('accounts')])
+        accounts = records('accounts')
+        if 'settings' not in g.current_user.get('allowedPages', ROLE_PAGES[g.current_user['role']]):
+            accounts = [account for account in accounts if account.get('role') == 'staff']
+        return jsonify([public_account(account) for account in accounts])
     payload, error = json_body()
     if error:
         return error
@@ -473,6 +489,15 @@ def auth_accounts():
         'createdAt': utc_now(),
     }
     database.accounts.insert_one(account)
+    if role == 'staff':
+        database.users.insert_one({
+            'id': f"USR-{uuid.uuid4().hex[:8].upper()}",
+            'accountId': account['id'],
+            'name': name,
+            'email': email,
+            'role': 'Staff',
+            'createdAt': utc_now(),
+        })
     return jsonify(public_account(account)), 201
 
 
@@ -530,6 +555,12 @@ def dashboard_data():
         'date': today,
     }) if patient and 'appointments' in allowed_pages else 0
     performance = database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)]) if role in {'doctor', 'admin'} and 'model-performance' in allowed_pages else None
+    staff_page_only = is_admin and 'staff' in allowed_pages and 'settings' not in allowed_pages
+    users = records('users') if is_admin and {'settings', 'staff'} & allowed_pages else []
+    accounts = records('accounts') if is_admin and {'settings', 'staff'} & allowed_pages else []
+    if staff_page_only:
+        users = [user for user in users if str(user.get('role', '')).lower() == 'staff']
+        accounts = [user for user in accounts if user.get('role') == 'staff']
     return jsonify({
         'patients': [patient] if patient and 'appointments' in allowed_pages else (records('patients') if role in {'doctor', 'staff', 'admin'} and 'patients' in allowed_pages else []),
         'doctors': records('doctors') if role in {'patient', 'staff', 'admin'} and 'doctors' in allowed_pages else [],
@@ -537,8 +568,8 @@ def dashboard_data():
         'todayAppointmentCount': today_appointment_count,
         'todayDate': today,
         'diseases': records('diseases') if role in {'doctor', 'staff', 'admin'} and 'diseases' in allowed_pages else [],
-        'users': records('users') if is_admin and 'settings' in allowed_pages else [],
-        'accounts': [public_account(user) for user in records('accounts')] if is_admin and 'settings' in allowed_pages else [],
+        'users': users,
+        'accounts': [public_account(user) for user in accounts],
         'assessments': records('assessments', limit=100) if role in {'doctor', 'admin'} and 'ml-assessment' in allowed_pages else [],
         'searchHistory': records('search_history', {'userId': account['id']}, limit=25) if is_admin and 'settings' in allowed_pages else [],
         'modelPerformance': performance,

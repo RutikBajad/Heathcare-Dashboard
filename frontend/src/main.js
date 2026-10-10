@@ -45,6 +45,7 @@ const navItems = [
   { id: 'patients', label: 'Patients' },
   { id: 'diseases', label: 'Diseases' },
   { id: 'doctors', label: 'Doctors' },
+  { id: 'staff', label: 'Staff' },
   { id: 'appointments', label: 'Appointments' },
   { id: 'hospital-info', label: 'Hospital information' },
   { id: 'add-record', label: 'Add records' },
@@ -585,6 +586,46 @@ function renderDoctors() {
   `;
 }
 
+function renderStaff() {
+  const staffAccounts = state.accounts.filter((account) => account.role === 'staff');
+  return `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Staff</h1>
+        <p class="page-subtitle">Staff accounts and their linked staff profiles.</p>
+      </div>
+      <button class="primary-button" type="button" data-action="add-record" data-record-type="staff"><span>${renderIcon('plus')}</span> Add staff</button>
+    </div>
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Staff directory</h2>
+        <span class="value-pill">${staffAccounts.length} staff</span>
+      </div>
+      <div class="doctor-grid">
+        ${staffAccounts.map((account) => {
+          const profile = state.users.find((user) => user.accountId === account.id);
+          return `
+            <article class="doctor-card">
+              <div class="doctor-info">
+                <div class="doctor-avatar">${escapeHtml(account.name.split(' ').map((part) => part[0]).slice(0, 2).join(''))}</div>
+                <div>
+                  <strong>${escapeHtml(account.name)}</strong>
+                  <div class="muted">Staff member</div>
+                </div>
+              </div>
+              <div class="mini-table" style="margin-top: 1rem;">
+                <tr><td>Email</td><td>${escapeHtml(account.email)}</td></tr>
+                <tr><td>Account ID</td><td>${escapeHtml(account.id)}</td></tr>
+                <tr><td>Profile</td><td>${profile ? escapeHtml(profile.id) : 'Linked to account'}</td></tr>
+              </div>
+            </article>
+          `;
+        }).join('') || '<div class="placeholder-box">No staff accounts have been added yet.</div>'}
+      </div>
+    </section>
+  `;
+}
+
 function renderAppointments() {
   if (state.appointmentFormOpen) {
     return renderRecordForm();
@@ -864,8 +905,10 @@ function renderModelPerformance() {
 }
 
 function renderRecordForm() {
-  const availableRecordTypes = state.currentUser.role === 'admin' || state.currentUser.role === 'staff'
-    ? ['patient', 'doctor', 'appointment', 'disease']
+  const availableRecordTypes = state.currentUser.role === 'admin'
+    ? ['patient', 'doctor', 'appointment', 'disease', 'staff']
+    : state.currentUser.role === 'staff'
+      ? ['patient', 'doctor', 'appointment', 'disease']
     : state.currentUser.role === 'doctor'
       ? ['disease']
       : ['appointment'];
@@ -918,6 +961,15 @@ function renderRecordForm() {
         <div class="form-field"><label for="record-name">Disease name</label><input id="record-name" name="name" required /></div>
         <div class="form-field"><label for="record-category">Category</label><input id="record-category" name="category" placeholder="e.g. Cardiovascular" required /></div>
         <div class="form-field" style="grid-column:1 / -1;"><label for="record-description">Description</label><textarea id="record-description" name="description" rows="4" required></textarea></div>
+      `,
+    },
+    staff: {
+      title: 'Add staff account',
+      description: 'Create a staff login and linked staff profile. The staff member can sign in with the email and password entered here.',
+      fields: `
+        <div class="form-field"><label for="record-name">Full name</label><input id="record-name" name="name" autocomplete="name" required /></div>
+        <div class="form-field"><label for="record-email">Email</label><input id="record-email" name="email" type="email" autocomplete="email" required /></div>
+        <div class="form-field"><label for="record-password">Temporary password</label><input id="record-password" name="password" type="password" autocomplete="new-password" minlength="12" required /><span class="muted">At least 12 characters.</span></div>
       `,
     },
   };
@@ -974,6 +1026,15 @@ function renderSettings() {
           }).join('')}</div></td>
           <td><button class="secondary-button" type="button" data-action="save-permissions" data-account-id="${escapeHtml(account.id)}">Save</button></td></tr>
         `).join('') || '<tr><td colspan="4">No accounts found.</td></tr>'}</tbody>
+      </table></div>
+    </section>
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title">Staff profiles</h2></div>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Name</th><th>Email</th><th>Profile ID</th></tr></thead>
+        <tbody>${state.users.filter((user) => user.role?.toLowerCase() === 'staff').map((user) => `
+          <tr><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.email)}</td><td>${escapeHtml(user.id)}</td></tr>
+        `).join('') || '<tr><td colspan="3">No staff profiles have been created.</td></tr>'}</tbody>
       </table></div>
     </section>
   ` : '';
@@ -1100,6 +1161,7 @@ function renderContent() {
     patients: renderPatients(),
     diseases: renderDiseases(),
     doctors: renderDoctors(),
+    staff: renderStaff(),
     appointments: renderAppointments(),
     'hospital-info': renderHospitalInfo(),
     'add-record': renderRecordForm(),
@@ -1583,24 +1645,35 @@ function bindEvents() {
         doctor: '/doctors',
         appointment: '/appointments',
         disease: '/diseases',
+        staff: '/auth/accounts',
       }[state.recordType];
+      if (state.recordType === 'staff') {
+        record.role = 'staff';
+      }
       try {
         await apiRequest(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(record),
         });
+        const savedRecordType = state.recordType;
         state.currentPage = ({
           patient: 'patients',
           doctor: 'doctors',
           appointment: 'appointments',
           disease: 'diseases',
-        })[state.recordType];
+          staff: userCanAccess('settings') ? 'settings' : 'add-record',
+        })[savedRecordType];
+        if (savedRecordType === 'staff' && !userCanAccess('settings')) {
+          state.recordType = 'patient';
+        }
         state.appointmentFormOpen = false;
         state.diseaseFormOpen = false;
-        state.dataNotice = state.currentUser.role === 'patient' && state.recordType === 'appointment'
+        state.dataNotice = savedRecordType === 'staff'
+          ? 'Staff account and linked profile created successfully.'
+          : state.currentUser.role === 'patient' && state.recordType === 'appointment'
           ? 'Appointment request submitted.'
-          : `${state.recordType[0].toUpperCase()}${state.recordType.slice(1)} record saved successfully.`;
+          : `${savedRecordType[0].toUpperCase()}${savedRecordType.slice(1)} record saved successfully.`;
         state.formFeedback = '';
         await loadDashboard();
       } catch (error) {
