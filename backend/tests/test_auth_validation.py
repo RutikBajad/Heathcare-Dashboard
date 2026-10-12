@@ -46,6 +46,18 @@ class AuthValidationTests(unittest.TestCase):
         mongo_client.admin.command.assert_called_once_with('ping')
         database.assert_not_called()
 
+    def test_model_performance_uses_repository_metrics_when_database_is_empty(self):
+        with patch.object(backend_app.database.model_performance, 'find_one', return_value=None):
+            performance = backend_app.model_performance_data()
+
+        self.assertEqual(performance['model'], 'Logistic Regression')
+        self.assertEqual(performance['accuracy'], 0.885246)
+        self.assertEqual(performance['rocAuc'], 0.96645)
+        self.assertEqual(performance['confusionMatrix'], [[28, 5], [2, 26]])
+        self.assertEqual(len(performance['modelComparisons']), 5)
+        self.assertEqual(performance['datasetSize'], 303)
+        self.assertEqual(performance['testSize'], 61)
+
     def test_staff_can_create_patient_and_doctor_records(self):
         self.assertIn('patients', backend_app.ROLE_PAGES['staff'])
         self.assertIn('doctors', backend_app.ROLE_PAGES['staff'])

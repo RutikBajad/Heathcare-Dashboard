@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import secrets
@@ -19,6 +20,7 @@ app = Flask(__name__)
 ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / '.env')
 MODEL_PATH = ROOT_DIR / 'ml' / 'heart_model.pkl'
+MODEL_METRICS_PATH = ROOT_DIR / 'ml' / 'evaluation_metrics.json'
 MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://127.0.0.1:27017')
 
 MONGODB_DATABASE = os.getenv('MONGODB_DATABASE', 'healthpilot')
@@ -287,6 +289,48 @@ def authenticate_api_request():
 
 def records(collection_name, query=None, limit=100):
     return list(database[collection_name].find(query or {}, {'_id': 0}).sort('_id', -1).limit(limit))
+
+
+def model_performance_data():
+    performance = database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)])
+    if performance is not None:
+        return performance
+
+    with MODEL_METRICS_PATH.open(encoding='utf-8') as metrics_file:
+        report = json.load(metrics_file)
+
+    selected_model = report['selected_model']
+    selected_metrics = next(
+        result for result in report['models'] if result['name'] == selected_model['name']
+    )
+    evaluation = report['source']['evaluation']
+    return {
+        'model': selected_model['name'],
+        'accuracy': selected_metrics['accuracy'],
+        'precision': selected_metrics['precision'],
+        'recall': selected_metrics['recall'],
+        'f1': selected_metrics['f1'],
+        'rocAuc': selected_metrics['roc_auc'],
+        'confusionMatrix': selected_model['confusion_matrix']['rows'],
+        'modelComparisons': [
+            {
+                'model': result['name'],
+                'accuracy': result['accuracy'],
+                'precision': result['precision'],
+                'recall': result['recall'],
+                'f1': result['f1'],
+                'rocAuc': result.get('roc_auc'),
+            }
+            for result in report['models']
+        ],
+        'datasetSize': evaluation['dataset_records'],
+        'testSize': evaluation['test_samples'],
+        'source': report['source']['notebook'],
+        'evaluation': (
+            f"{evaluation['test_size']:.0%} held-out test split "
+            f"({evaluation['test_samples']} of {evaluation['dataset_records']} records)."
+        ),
+    }
 
 
 def json_body():
@@ -574,7 +618,7 @@ def dashboard_data():
     }) if patient and 'appointments' in allowed_pages else 0
     performance = None
     if role in {'doctor', 'admin'} and 'model-performance' in allowed_pages:
-        performance = database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)])
+        performance = model_performance_data()
     staff_page_only = is_admin and 'staff' in allowed_pages and 'settings' not in allowed_pages
     users = records('users') if is_admin and {'settings', 'staff'} & allowed_pages else []
     accounts = records('accounts') if is_admin and {'settings', 'staff'} & allowed_pages else []
@@ -944,7 +988,7 @@ def model_performance_api():
         return '', 204
     ensure_database()
     if request.method == 'GET':
-        return jsonify(database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)]))
+        return jsonify(model_performance_data())
     payload, error = json_body()
     if error:
         return error
