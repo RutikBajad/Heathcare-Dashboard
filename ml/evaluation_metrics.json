@@ -1,0 +1,94 @@
+{
+  "artifact": "heart-disease-model-evaluation",
+  "source": {
+    "notebook": "notebooks/heart_disease_analysis.ipynb",
+    "dataset": "data/heart.csv",
+    "evaluation": {
+      "method": "train_test_split",
+      "test_size": 0.2,
+      "random_state": 42,
+      "test_samples": 61
+    }
+  },
+  "models": [
+    {
+      "name": "Logistic Regression",
+      "accuracy": 0.885246,
+      "precision": 0.83871,
+      "recall": 0.928571,
+      "f1": 0.881356,
+      "roc_auc": 0.96645
+    },
+    {
+      "name": "KNN",
+      "accuracy": 0.885246,
+      "precision": 0.862069,
+      "recall": 0.892857,
+      "f1": 0.877193
+    },
+    {
+      "name": "Naive Bayes",
+      "accuracy": 0.721311,
+      "precision": 0.641026,
+      "recall": 0.892857,
+      "f1": 0.746269
+    },
+    {
+      "name": "Decision Tree",
+      "accuracy": 0.737705,
+      "precision": 0.676471,
+      "recall": 0.821429,
+      "f1": 0.741935
+    },
+    {
+      "name": "Random Forest",
+      "accuracy": 0.868852,
+      "precision": 0.8125,
+      "recall": 0.928571,
+      "f1": 0.866667,
+      "roc_auc": 0.942641
+    }
+  ],
+  "selected_model": {
+    "name": "Logistic Regression",
+    "artifact": "ml/heart_model.pkl",
+    "confusion_matrix": {
+      "labels": [0, 1],
+      "rows": [
+        [28, 5],
+        [2, 26]
+      ]
+    },
+    "classification_report": {
+      "0": {
+        "precision": 0.93,
+        "recall": 0.85,
+        "f1": 0.89,
+        "support": 33
+      },
+      "1": {
+        "precision": 0.84,
+        "recall": 0.93,
+        "f1": 0.88,
+        "support": 28
+      },
+      "accuracy": 0.89,
+      "macro_avg": {
+        "precision": 0.89,
+        "recall": 0.89,
+        "f1": 0.89,
+        "support": 61
+      },
+      "weighted_avg": {
+        "precision": 0.89,
+        "recall": 0.89,
+        "f1": 0.89,
+        "support": 61
+      }
+    }
+  },
+  "notes": [
+    "Metrics are copied from the saved notebook outputs; ROC-AUC is included only for models with a recorded result.",
+    "For research and demonstration only; not for clinical decision-making."
+  ]
+}
