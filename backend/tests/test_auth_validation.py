@@ -46,9 +46,26 @@ class AuthValidationTests(unittest.TestCase):
         mongo_client.admin.command.assert_called_once_with('ping')
         database.assert_not_called()
 
-    def test_model_performance_uses_repository_metrics_when_database_is_empty(self):
-        with patch.object(backend_app.database.model_performance, 'find_one', return_value=None):
-            performance = backend_app.model_performance_data()
+    def test_model_performance_persists_repository_metrics_when_collection_is_empty(self):
+        stored_performance = {}
+
+        def find_one(query, projection, sort=None):
+            if query.get('_id') == {'$ne': backend_app.DEFAULT_MODEL_PERFORMANCE_ID}:
+                return None
+            if query.get('_id') == backend_app.DEFAULT_MODEL_PERFORMANCE_ID:
+                return {key: value for key, value in stored_performance.items() if key != '_id'}
+            return None
+
+        def update_one(query, update, upsert):
+            self.assertTrue(upsert)
+            stored_performance.update(query)
+            stored_performance.update(update['$setOnInsert'])
+
+        with patch.object(backend_app, 'database') as database:
+            collection = database.model_performance
+            with patch.object(collection, 'find_one', side_effect=find_one):
+                with patch.object(collection, 'update_one', side_effect=update_one) as update:
+                    performance = backend_app.model_performance_data()
 
         self.assertEqual(performance['model'], 'Logistic Regression')
         self.assertEqual(performance['accuracy'], 0.885246)
@@ -57,6 +74,10 @@ class AuthValidationTests(unittest.TestCase):
         self.assertEqual(len(performance['modelComparisons']), 5)
         self.assertEqual(performance['datasetSize'], 303)
         self.assertEqual(performance['testSize'], 61)
+        self.assertEqual(len(performance['rocCurve']), 14)
+        self.assertEqual(performance['rocCurve'][0], {'fpr': 0.0, 'tpr': 0.0})
+        self.assertEqual(performance['rocCurve'][-1], {'fpr': 1.0, 'tpr': 1.0})
+        update.assert_called_once()
 
     def test_staff_can_create_patient_and_doctor_records(self):
         self.assertIn('patients', backend_app.ROLE_PAGES['staff'])

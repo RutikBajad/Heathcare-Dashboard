@@ -1934,20 +1934,33 @@ function drawCharts() {
       config: {
         type: 'line',
         data: {
-          labels: performance.rocCurve.map((point) => point.fpr),
           datasets: [{
-            label: 'ROC',
-            data: performance.rocCurve.map((point) => point.tpr),
+            label: 'ROC curve',
+            data: performance.rocCurve.map((point) => ({ x: point.fpr, y: point.tpr })),
             borderColor: chartPalette.primary,
             fill: false,
             borderWidth: 2,
+            pointRadius: 2,
+            tension: 0,
+            parsing: false,
+          }, {
+            label: 'No-skill baseline',
+            data: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+            borderColor: chartPalette.slate,
+            borderDash: [6, 6],
+            borderWidth: 1,
+            pointRadius: 0,
+            parsing: false,
           }],
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: { x: { grid: { display: false }, title: { display: true, text: 'False positive rate' } }, y: { grid: { display: false }, title: { display: true, text: 'True positive rate' } } },
+          plugins: { legend: { display: true } },
+          scales: {
+            x: { type: 'linear', min: 0, max: 1, grid: { display: false }, title: { display: true, text: 'False positive rate' } },
+            y: { type: 'linear', min: 0, max: 1, grid: { display: false }, title: { display: true, text: 'True positive rate' } },
+          },
         },
       },
     });

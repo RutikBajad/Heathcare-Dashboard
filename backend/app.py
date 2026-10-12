@@ -21,6 +21,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / '.env')
 MODEL_PATH = ROOT_DIR / 'ml' / 'heart_model.pkl'
 MODEL_METRICS_PATH = ROOT_DIR / 'ml' / 'evaluation_metrics.json'
+DEFAULT_MODEL_PERFORMANCE_ID = 'heart-disease-notebook-evaluation'
 MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://127.0.0.1:27017')
 
 MONGODB_DATABASE = os.getenv('MONGODB_DATABASE', 'healthpilot')
@@ -292,7 +293,11 @@ def records(collection_name, query=None, limit=100):
 
 
 def model_performance_data():
-    performance = database.model_performance.find_one({}, {'_id': 0}, sort=[('_id', -1)])
+    performance = database.model_performance.find_one(
+        {'_id': {'$ne': DEFAULT_MODEL_PERFORMANCE_ID}},
+        {'_id': 0},
+        sort=[('createdAt', -1), ('_id', -1)],
+    )
     if performance is not None:
         return performance
 
@@ -304,13 +309,14 @@ def model_performance_data():
         result for result in report['models'] if result['name'] == selected_model['name']
     )
     evaluation = report['source']['evaluation']
-    return {
+    default_performance = {
         'model': selected_model['name'],
         'accuracy': selected_metrics['accuracy'],
         'precision': selected_metrics['precision'],
         'recall': selected_metrics['recall'],
         'f1': selected_metrics['f1'],
         'rocAuc': selected_metrics['roc_auc'],
+        'rocCurve': selected_model['roc_curve'],
         'confusionMatrix': selected_model['confusion_matrix']['rows'],
         'modelComparisons': [
             {
@@ -330,7 +336,17 @@ def model_performance_data():
             f"{evaluation['test_size']:.0%} held-out test split "
             f"({evaluation['test_samples']} of {evaluation['dataset_records']} records)."
         ),
+        'createdAt': utc_now(),
     }
+    database.model_performance.update_one(
+        {'_id': DEFAULT_MODEL_PERFORMANCE_ID},
+        {'$setOnInsert': default_performance},
+        upsert=True,
+    )
+    return database.model_performance.find_one(
+        {'_id': DEFAULT_MODEL_PERFORMANCE_ID},
+        {'_id': 0},
+    )
 
 
 def json_body():

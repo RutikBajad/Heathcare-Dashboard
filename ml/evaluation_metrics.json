@@ -86,7 +86,23 @@
         "f1": 0.89,
         "support": 61
       }
-    }
+    },
+    "roc_curve": [
+      { "fpr": 0.0, "tpr": 0.0 },
+      { "fpr": 0.0, "tpr": 0.035714 },
+      { "fpr": 0.0, "tpr": 0.642857 },
+      { "fpr": 0.030303, "tpr": 0.642857 },
+      { "fpr": 0.030303, "tpr": 0.785714 },
+      { "fpr": 0.060606, "tpr": 0.785714 },
+      { "fpr": 0.060606, "tpr": 0.892857 },
+      { "fpr": 0.151515, "tpr": 0.892857 },
+      { "fpr": 0.151515, "tpr": 0.928571 },
+      { "fpr": 0.181818, "tpr": 0.928571 },
+      { "fpr": 0.181818, "tpr": 0.964286 },
+      { "fpr": 0.30303, "tpr": 0.964286 },
+      { "fpr": 0.30303, "tpr": 1.0 },
+      { "fpr": 1.0, "tpr": 1.0 }
+    ]
   },
   "notes": [
     "Metrics are copied from the saved notebook outputs; ROC-AUC is included only for models with a recorded result.",
