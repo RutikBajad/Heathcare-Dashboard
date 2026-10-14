@@ -157,6 +157,10 @@ textarea {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.sidebar-closed .sidebar-toggle {
+  left: 1rem;
+}
+
 .sidebar-toggle svg {
   width: 20px;
   height: 20px;
@@ -1390,6 +1394,10 @@ html[data-theme='dark'] .appointment-card {
 @media (max-width: 1024px) {
   .sidebar-toggle {
     left: calc(min(320px, 100vw - 3rem) - 64px);
+  }
+
+  .sidebar-closed .sidebar-toggle {
+    left: 0.75rem;
   }
 
   .sidebar {
