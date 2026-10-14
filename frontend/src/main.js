@@ -432,77 +432,106 @@ function renderSearchResultsPage() {
 }
 
 function getDemographicCounts() {
-  const counts = Array(6).fill(0);
+  const counts = Array(7).fill(0);
   state.patientRecords.forEach((patient) => {
     const age = Number(patient.age);
-    const band = age < 30 ? 0 : age < 40 ? 1 : age < 50 ? 2 : age < 60 ? 3 : age < 70 ? 4 : 5;
+    const band = age < 18 ? 0 : age < 30 ? 1 : age < 40 ? 2 : age < 50 ? 3 : age < 60 ? 4 : age < 70 ? 5 : 6;
     counts[band] += 1;
   });
   return counts;
 }
 
-function getPatientActivityByMonth() {
+function getTrendBuckets() {
   const analyticsPage = state.currentPage === 'analytics';
   const recentDays = analyticsPage && state.analyticsRange === '30-days';
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const buckets = recentDays
-    ? Array.from({ length: 5 }, (_, index) => {
-      const date = new Date(today);
-      date.setDate(date.getDate() - (29 - index * 7));
-      return { key: index, label: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), count: 0 };
-    })
-    : Array.from({ length: analyticsPage ? 3 : 7 }, (_, index) => {
-      const offset = analyticsPage ? Math.floor(today.getMonth() / 3) * 3 + index : today.getMonth() - (6 - index);
-      const date = new Date(today.getFullYear(), offset, 1);
-      return { key: `${date.getFullYear()}-${date.getMonth()}`, label: date.toLocaleString(undefined, { month: 'short' }), count: 0 };
+  if (recentDays) {
+    const periodStart = new Date(today);
+    periodStart.setDate(periodStart.getDate() - 29);
+    return Array.from({ length: 5 }, (_, index) => {
+      const start = new Date(periodStart);
+      start.setDate(start.getDate() + index * 7);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 7);
+      return {
+        key: index,
+        label: `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
+        start,
+        end,
+      };
     });
-  const periodStart = new Date(today);
-  if (recentDays) periodStart.setDate(periodStart.getDate() - 29);
-  else if (analyticsPage) periodStart.setMonth(Math.floor(today.getMonth() / 3) * 3, 1);
-  else periodStart.setMonth(periodStart.getMonth() - 6, 1);
+  }
+
+  const monthCount = analyticsPage ? 3 : 7;
+  const firstMonth = analyticsPage
+    ? Math.floor(today.getMonth() / 3) * 3
+    : today.getMonth() - (monthCount - 1);
+  return Array.from({ length: monthCount }, (_, index) => {
+    const start = new Date(today.getFullYear(), firstMonth + index, 1);
+    return {
+      key: `${start.getFullYear()}-${start.getMonth()}`,
+      label: start.toLocaleString(undefined, { month: 'short' }),
+      start,
+      end: new Date(start.getFullYear(), start.getMonth() + 1, 1),
+    };
+  });
+}
+
+function getPatientActivityByMonth() {
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const buckets = getTrendBuckets().map((bucket) => ({ ...bucket, count: 0 }));
   state.patientRecords.forEach((patient) => {
     if (!patient.lastVisit) return;
     const visitDate = new Date(`${patient.lastVisit}T00:00:00`);
-    if (visitDate < periodStart || visitDate > today) return;
-    if (recentDays) {
-      const week = Math.min(4, Math.floor((visitDate - periodStart) / (7 * 24 * 60 * 60 * 1000)));
-      buckets[week].count += 1;
-      return;
-    }
-    const month = buckets.find((item) => item.key === `${visitDate.getFullYear()}-${visitDate.getMonth()}`);
-    if (month) month.count += 1;
+    const bucket = buckets.find((item) => visitDate >= item.start && visitDate < item.end && visitDate <= today);
+    if (bucket) bucket.count += 1;
   });
   return buckets;
 }
 
-function getAppointmentWeekdayCounts() {
-  const counts = Array(7).fill(0);
-  const analyticsPage = state.currentPage === 'analytics';
-  if (!analyticsPage) {
-    state.appointments.forEach((appointment) => {
-      const day = new Date(`${appointment.date}T00:00:00`).getDay();
-      counts[day] += 1;
-    });
-    return counts;
-  }
+function getAppointmentActivityByPeriod() {
   const today = new Date();
   today.setHours(23, 59, 59, 999);
-  const periodStart = new Date(today);
-  if (state.analyticsRange === '30-days') {
-    periodStart.setDate(periodStart.getDate() - 29);
-    periodStart.setHours(0, 0, 0, 0);
-  } else {
-    periodStart.setMonth(Math.floor(today.getMonth() / 3) * 3, 1);
-    periodStart.setHours(0, 0, 0, 0);
-  }
+  const buckets = getTrendBuckets().map((bucket) => ({ ...bucket, count: 0 }));
   state.appointments.forEach((appointment) => {
+    if (!appointment.date) return;
     const appointmentDate = new Date(`${appointment.date}T00:00:00`);
-    if (appointmentDate < periodStart || appointmentDate > today) return;
-    const day = appointmentDate.getDay();
-    counts[day] += 1;
+    const bucket = buckets.find((item) => appointmentDate >= item.start && appointmentDate < item.end && appointmentDate <= today);
+    if (bucket) bucket.count += 1;
   });
-  return counts;
+  return buckets;
+}
+
+function getDiseasePatientCounts() {
+  return state.diseases
+    .map((disease) => ({
+      name: disease.name,
+      count: state.patientRecords.filter((patient) => (patient.conditions || []).includes(disease.id)).length,
+    }))
+    .filter((disease) => disease.count > 0)
+    .sort((first, second) => second.count - first.count || first.name.localeCompare(second.name))
+    .slice(0, 8);
+}
+
+function getDoctorAppointmentCounts() {
+  return state.doctors
+    .map((doctor) => ({
+      name: doctor.name,
+      count: state.appointments.filter((appointment) => appointment.doctor === doctor.name).length,
+    }))
+    .filter((doctor) => doctor.count > 0)
+    .sort((first, second) => second.count - first.count || first.name.localeCompare(second.name))
+    .slice(0, 8);
+}
+
+function getPatientRiskCounts() {
+  const riskLevels = ['Low', 'Medium', 'High'];
+  return riskLevels.map((level) => ({
+    level,
+    count: state.patientRecords.filter((patient) => (patient.risk || '').toLowerCase() === level.toLowerCase()).length,
+  }));
 }
 
 function getDashboardAlerts() {
@@ -677,44 +706,42 @@ function renderOverview() {
         </article>
       `).join('')}
     </div>
-    <div class="grid grid-2" style="margin-top: 1.25rem;">
+    <div class="grid grid-2 hospital-overview-charts">
       <section class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">Patient activity</h2>
-          <button class="ghost-button" type="button">Last 7 days</button>
+          <h2 class="panel-title">Latest patient visits</h2>
         </div>
-        <div class="chart-box">
-          <canvas data-chart="activity"></canvas>
-        </div>
+        <p class="muted chart-caption">Patients grouped by their latest recorded visit date.</p>
+        <div class="chart-box"><canvas data-chart="activity"></canvas></div>
       </section>
       <section class="panel">
-        <div class="panel-header">
-          <h2 class="panel-title">Appointment status</h2>
-          <button class="ghost-button" type="button">This month</button>
-        </div>
-        <div class="chart-box" style="max-height: 260px;">
+        <div class="panel-header"><h2 class="panel-title">Appointment status</h2></div>
+        <p class="muted chart-caption">Status breakdown across all recorded appointments.</p>
+        <div class="chart-box chart-box-compact">
           <canvas data-chart="doughnut"></canvas>
         </div>
       </section>
-    </div>
-    <div class="grid grid-2" style="margin-top: 1.25rem;">
       <section class="panel">
-        <div class="panel-header">
-          <h2 class="panel-title">Patient demographics</h2>
-          <button class="ghost-button" type="button">Age bands</button>
-        </div>
+        <div class="panel-header"><h2 class="panel-title">Patients by condition</h2></div>
+        <p class="muted chart-caption">Top 8 conditions by linked patient records.</p>
+        <div class="chart-box" style="height:${Math.max(240, getDiseasePatientCounts().length * 36)}px"><canvas data-chart="diseasePatients"></canvas></div>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Appointments by doctor</h2></div>
+        <p class="muted chart-caption">Top 8 clinicians by recorded appointments, including upcoming bookings.</p>
+        <div class="chart-box" style="height:${Math.max(240, getDoctorAppointmentCounts().length * 36)}px"><canvas data-chart="doctorAppointments"></canvas></div>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Patient risk profile</h2></div>
+        <p class="muted chart-caption">Patient records grouped by the risk level on file.</p>
+        <div class="chart-box chart-box-compact"><canvas data-chart="riskProfile"></canvas></div>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Patient age distribution</h2></div>
+        <p class="muted chart-caption">Current patient records grouped into age bands.</p>
         <div class="chart-box">
           <canvas data-chart="demographics"></canvas>
         </div>
-      </section>
-      <section class="panel">
-        <div class="panel-header">
-          <h2 class="panel-title">Recent activity</h2>
-          <button class="ghost-button" type="button">See all</button>
-        </div>
-        <ul class="list">
-          <li class="muted">No activity to show yet. It will appear here as records are added.</li>
-        </ul>
       </section>
     </div>
   `;
@@ -1078,30 +1105,53 @@ function renderAnalytics() {
     <div class="page-header">
       <div>
         <h1 class="page-title">Analytics</h1>
-        <p class="page-subtitle">Trend analysis for patient utilization, appointments, and cohort health.</p>
+        <p class="page-subtitle">Hospital trends from patient records, condition links, and appointment history.</p>
       </div>
       <div class="topbar-actions">
         <button class="${state.analyticsRange === '30-days' ? 'primary-button' : 'secondary-button'}" type="button" data-analytics-range="30-days">Last 30 days</button>
         <button class="${state.analyticsRange === 'quarter' ? 'primary-button' : 'secondary-button'}" type="button" data-analytics-range="quarter">This quarter</button>
       </div>
     </div>
-    <div class="grid grid-3">
+    <div class="grid grid-2 hospital-analytics-grid">
       <section class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">Patient activity</h2>
+          <h2 class="panel-title">Latest patient visits</h2>
         </div>
+        <p class="muted chart-caption">${state.analyticsRange === '30-days' ? 'Weekly' : 'Monthly'} count of patients by latest recorded visit.</p>
         <div class="chart-box"><canvas data-chart="analyticsTrend"></canvas></div>
       </section>
       <section class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">Appointment trends</h2>
+          <h2 class="panel-title">Appointment volume</h2>
         </div>
+        <p class="muted chart-caption">${state.analyticsRange === '30-days' ? 'Weekly' : 'Monthly'} appointments by scheduled date; excludes future bookings and includes all statuses.</p>
         <div class="chart-box"><canvas data-chart="appointmentsTrend"></canvas></div>
       </section>
       <section class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">Demographic mix</h2>
+          <h2 class="panel-title">Patients by condition</h2>
         </div>
+        <p class="muted chart-caption">Top 8 conditions by linked patient records; patients may have multiple conditions.</p>
+        <div class="chart-box" style="height:${Math.max(240, getDiseasePatientCounts().length * 36)}px"><canvas data-chart="diseasePatients"></canvas></div>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Appointments by doctor</h2></div>
+        <p class="muted chart-caption">Top 8 clinicians by recorded appointments, including upcoming bookings.</p>
+        <div class="chart-box" style="height:${Math.max(240, getDoctorAppointmentCounts().length * 36)}px"><canvas data-chart="doctorAppointments"></canvas></div>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Patient risk profile</h2></div>
+        <p class="muted chart-caption">Current patient records grouped by risk level on file.</p>
+        <div class="chart-box chart-box-compact"><canvas data-chart="riskProfile"></canvas></div>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Appointment status</h2></div>
+        <p class="muted chart-caption">Status breakdown across all recorded appointments.</p>
+        <div class="chart-box chart-box-compact"><canvas data-chart="analyticsAppointmentStatus"></canvas></div>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Patient age distribution</h2></div>
+        <p class="muted chart-caption">Current patient records grouped into age bands.</p>
         <div class="chart-box"><canvas data-chart="demographicBar"></canvas></div>
       </section>
     </div>
@@ -1441,45 +1491,47 @@ function renderRecordForm() {
 
 function renderSettings() {
   const adminPanel = state.currentUser.role === 'admin' ? `
-    <section class="panel">
-      <div class="panel-header"><h2 class="panel-title">Create an account</h2></div>
-      ${state.formFeedback ? `<div class="data-error" role="alert">${escapeHtml(state.formFeedback)}</div>` : ''}
-      <form id="account-form" class="form-grid">
-        <div class="form-field"><label for="account-name">Full name</label><input id="account-name" name="name" required /></div>
-        <div class="form-field"><label for="account-email">Account ID</label><input id="account-email" name="email" autocomplete="username" required /></div>
-        <div class="form-field"><label for="account-password">Temporary password</label><input id="account-password" name="password" type="password" minlength="8" required /><span class="muted">At least 8 characters.</span></div>
-        <div class="form-field"><label for="account-role">Role</label><select id="account-role" name="role" required><option value="">Select role</option><option value="doctor">Doctor</option><option value="staff">Staff</option><option value="admin">Administrator</option></select></div>
-        <div class="form-field" id="account-doctor-field" hidden><label for="account-doctor">Linked doctor record</label><select id="account-doctor" name="doctorName"><option value="">Select doctor</option>${state.doctors.map((doctor) => `<option>${escapeHtml(doctor.name)}</option>`).join('')}</select></div>
-        <div class="form-actions" style="grid-column:1/-1"><button class="primary-button" type="submit">Create account</button></div>
-      </form>
-    </section>
-    <section class="panel">
-      <div class="panel-header"><h2 class="panel-title">Accounts and page access</h2></div>
-      <div class="table-wrap"><table class="data-table">
-        <thead><tr><th>Account</th><th>Role / status</th><th>Visible pages</th><th>Actions</th></tr></thead>
-        <tbody>${state.accounts.map((account) => `
-          <tr><td><strong>${escapeHtml(account.name)}</strong><br><span class="muted">${escapeHtml(account.email)}</span></td>
-          <td>${escapeHtml(account.role)}<br><span class="${isActive(account) ? 'badge badge-success' : 'badge badge-danger'}">${isActive(account) ? 'Active' : 'Inactive'}</span></td>
-          <td><div class="permission-list">${(rolePages[account.role] || []).map((page) => {
-            const label = navItems.find((item) => item.id === page)?.label || page;
-            return `<label><input type="checkbox" data-account-page="${escapeHtml(account.id)}" value="${escapeHtml(page)}" ${account.allowedPages.includes(page) ? 'checked' : ''} /> ${escapeHtml(label)}</label>`;
-          }).join('')}</div></td>
-          <td><div class="account-actions">
-            <button class="secondary-button" type="button" data-action="save-permissions" data-account-id="${escapeHtml(account.id)}">Save access</button>
-            <button class="ghost-button" type="button" data-action="toggle-account-active" data-account-id="${escapeHtml(account.id)}" ${account.id === state.currentUser.id ? 'disabled' : ''}>${isActive(account) ? 'Deactivate' : 'Reactivate'}</button>
-          </div></td></tr>
-        `).join('') || '<tr><td colspan="4">No accounts found.</td></tr>'}</tbody>
-      </table></div>
-    </section>
-    <section class="panel">
-      <div class="panel-header"><h2 class="panel-title">Staff profiles</h2></div>
-      <div class="table-wrap"><table class="data-table">
-        <thead><tr><th>Name</th><th>Email</th><th>Profile ID</th></tr></thead>
-        <tbody>${state.users.filter((user) => user.role?.toLowerCase() === 'staff').map((user) => `
-          <tr><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.email)}</td><td>${escapeHtml(user.id)}</td></tr>
-        `).join('') || '<tr><td colspan="3">No staff profiles have been created.</td></tr>'}</tbody>
-      </table></div>
-    </section>
+    <div class="settings-admin-stack">
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Create an account</h2></div>
+        ${state.formFeedback ? `<div class="data-error" role="alert">${escapeHtml(state.formFeedback)}</div>` : ''}
+        <form id="account-form" class="form-grid settings-account-form">
+          <div class="form-field"><label for="account-name">Full name</label><input id="account-name" name="name" required /></div>
+          <div class="form-field"><label for="account-email">Account ID</label><input id="account-email" name="email" autocomplete="username" required /></div>
+          <div class="form-field"><label for="account-password">Temporary password</label><input id="account-password" name="password" type="password" minlength="8" required /><span class="muted">At least 8 characters.</span></div>
+          <div class="form-field"><label for="account-role">Role</label><select id="account-role" name="role" required><option value="">Select role</option><option value="doctor">Doctor</option><option value="staff">Staff</option><option value="admin">Administrator</option></select></div>
+          <div class="form-field" id="account-doctor-field" hidden><label for="account-doctor">Linked doctor record</label><select id="account-doctor" name="doctorName"><option value="">Select doctor</option>${state.doctors.map((doctor) => `<option>${escapeHtml(doctor.name)}</option>`).join('')}</select></div>
+          <div class="form-actions" style="grid-column:1/-1"><button class="primary-button" type="submit">Create account</button></div>
+        </form>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Accounts and page access</h2></div>
+        <div class="table-wrap settings-table-wrap"><table class="data-table settings-data-table">
+          <thead><tr><th>Account</th><th>Role / status</th><th>Visible pages</th><th>Actions</th></tr></thead>
+          <tbody>${state.accounts.map((account) => `
+            <tr><td><strong>${escapeHtml(account.name)}</strong><br><span class="muted">${escapeHtml(account.email)}</span></td>
+            <td>${escapeHtml(account.role)}<br><span class="${isActive(account) ? 'badge badge-success' : 'badge badge-danger'}">${isActive(account) ? 'Active' : 'Inactive'}</span></td>
+            <td><div class="permission-list">${(rolePages[account.role] || []).map((page) => {
+              const label = navItems.find((item) => item.id === page)?.label || page;
+              return `<label><input type="checkbox" data-account-page="${escapeHtml(account.id)}" value="${escapeHtml(page)}" ${account.allowedPages.includes(page) ? 'checked' : ''} /> ${escapeHtml(label)}</label>`;
+            }).join('')}</div></td>
+            <td><div class="account-actions">
+              <button class="secondary-button" type="button" data-action="save-permissions" data-account-id="${escapeHtml(account.id)}">Save access</button>
+              <button class="ghost-button" type="button" data-action="toggle-account-active" data-account-id="${escapeHtml(account.id)}" ${account.id === state.currentUser.id ? 'disabled' : ''}>${isActive(account) ? 'Deactivate' : 'Reactivate'}</button>
+            </div></td></tr>
+          `).join('') || '<tr><td colspan="4">No accounts found.</td></tr>'}</tbody>
+        </table></div>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><h2 class="panel-title">Staff profiles</h2></div>
+        <div class="table-wrap settings-table-wrap"><table class="data-table settings-data-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Profile ID</th></tr></thead>
+          <tbody>${state.users.filter((user) => user.role?.toLowerCase() === 'staff').map((user) => `
+            <tr><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.email)}</td><td>${escapeHtml(user.id)}</td></tr>
+          `).join('') || '<tr><td colspan="3">No staff profiles have been created.</td></tr>'}</tbody>
+        </table></div>
+      </section>
+    </div>
   ` : '';
   return `
     <div class="page-header">
@@ -1488,7 +1540,7 @@ function renderSettings() {
         <p class="page-subtitle">Customize the dashboard experience and project preferences.</p>
       </div>
     </div>
-    <div class="grid grid-2">
+    <div class="settings-preference-grid">
       <section class="panel">
         <div class="panel-header">
           <h2 class="panel-title">Preference center</h2>
@@ -1508,7 +1560,6 @@ function renderSettings() {
           </div>
         </div>
       </section>
-      ${adminPanel}
       <section class="panel">
         <div class="panel-header">
           <h2 class="panel-title">Recent search history</h2>
@@ -1545,6 +1596,7 @@ function renderSettings() {
         <div class="placeholder-box" style="margin-top: 1rem;">Educational prototype only. Do not store real patient information until appropriate privacy, security, compliance, and clinical safeguards are in place. Dashboard charts reflect records currently stored in the database.</div>
       </section>
     </div>
+    ${adminPanel}
   `;
 }
 
@@ -1824,12 +1876,16 @@ async function loadDashboard() {
 
 function drawCharts() {
   const patientActivity = getPatientActivityByMonth();
+  const appointmentActivity = getAppointmentActivityByPeriod();
   const demographicCounts = getDemographicCounts();
-  const appointmentStatuses = ['Confirmed', 'Pending', 'Completed', 'Rescheduled'];
+  const diseases = getDiseasePatientCounts();
+  const doctorAppointments = getDoctorAppointmentCounts();
+  const riskCounts = getPatientRiskCounts();
+  const appointmentStatuses = ['Confirmed', 'Pending', 'Completed', 'Rescheduled', 'Cancelled'];
   const appointmentStatusCounts = appointmentStatuses.map(
     (status) => state.appointments.filter((appointment) => appointment.status === status).length,
   );
-  const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const statusColors = [chartPalette.primary, chartPalette.blue, chartPalette.teal, chartPalette.gold, chartPalette.red];
 
   const chartDefinitions = [
     {
@@ -1837,13 +1893,13 @@ function drawCharts() {
       config: {
         type: 'line',
         data: {
-          labels: patientActivity.map((month) => month.label),
+          labels: patientActivity.map((bucket) => bucket.label),
           datasets: [{
-            label: 'Patient activity',
-            data: patientActivity.map((month) => month.count),
+            label: 'Patients by latest visit date',
+            data: patientActivity.map((bucket) => bucket.count),
             borderColor: chartPalette.primary,
             backgroundColor: 'rgba(15, 118, 110, 0.12)',
-            pointRadius: 0,
+            pointRadius: 3,
             borderWidth: 3,
             fill: true,
             tension: 0.35,
@@ -1855,7 +1911,7 @@ function drawCharts() {
           plugins: { legend: { display: false } },
           scales: {
             x: { grid: { display: false } },
-            y: { display: false },
+            y: { beginAtZero: true, ticks: { precision: 0 } },
           },
         },
       },
@@ -1868,7 +1924,170 @@ function drawCharts() {
           labels: appointmentStatuses,
           datasets: [{
             data: appointmentStatusCounts,
-            backgroundColor: [chartPalette.primary, chartPalette.blue, chartPalette.teal, chartPalette.gold],
+            backgroundColor: statusColors,
+            borderWidth: 0,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: { callbacks: { label: (context) => `${context.label}: ${context.raw}` } },
+          },
+        },
+      },
+    },
+    {
+      id: 'demographics',
+      config: {
+        type: 'bar',
+        data: {
+          labels: ['0-17', '18-29', '30-39', '40-49', '50-59', '60-69', '70+'],
+          datasets: [{
+            label: 'Patients',
+            data: demographicCounts,
+            backgroundColor: [chartPalette.slate, chartPalette.primary, chartPalette.teal, chartPalette.blue, chartPalette.gold, chartPalette.red, '#8b5cf6'],
+            borderRadius: 8,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { display: false } },
+            y: { beginAtZero: true, ticks: { precision: 0 } },
+          },
+        },
+      },
+    },
+    {
+      id: 'analyticsTrend',
+      config: {
+        type: 'line',
+        data: {
+          labels: patientActivity.map((bucket) => bucket.label),
+          datasets: [{
+            label: 'Patients by latest visit date',
+            data: patientActivity.map((bucket) => bucket.count),
+            borderColor: chartPalette.primary,
+            backgroundColor: 'rgba(15, 118, 110, 0.1)',
+            pointRadius: 3,
+            borderWidth: 3,
+            fill: true,
+            tension: 0.35,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+      },
+    },
+    {
+      id: 'appointmentsTrend',
+      config: {
+        type: 'bar',
+        data: {
+          labels: appointmentActivity.map((bucket) => bucket.label),
+          datasets: [{
+            label: 'Appointments',
+            data: appointmentActivity.map((bucket) => bucket.count),
+            backgroundColor: chartPalette.teal,
+            borderRadius: 8,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+      },
+    },
+    {
+      id: 'demographicBar',
+      config: {
+        type: 'bar',
+        data: {
+          labels: ['0-17', '18-29', '30-39', '40-49', '50-59', '60-69', '70+'],
+          datasets: [{
+            label: 'Patients',
+            data: demographicCounts,
+            backgroundColor: [chartPalette.slate, chartPalette.primary, chartPalette.teal, chartPalette.blue, chartPalette.gold, chartPalette.red, '#8b5cf6'],
+            borderRadius: 8,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+      },
+    },
+    {
+      id: 'diseasePatients',
+      config: {
+        type: 'bar',
+        data: {
+          labels: diseases.map((disease) => disease.name),
+          datasets: [{
+            label: 'Patients',
+            data: diseases.map((disease) => disease.count),
+            backgroundColor: chartPalette.primary,
+            borderRadius: 6,
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { beginAtZero: true, ticks: { precision: 0 } },
+            y: { grid: { display: false } },
+          },
+        },
+      },
+    },
+    {
+      id: 'doctorAppointments',
+      config: {
+        type: 'bar',
+        data: {
+          labels: doctorAppointments.map((doctor) => doctor.name),
+          datasets: [{
+            label: 'Appointments',
+            data: doctorAppointments.map((doctor) => doctor.count),
+            backgroundColor: chartPalette.blue,
+            borderRadius: 6,
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { beginAtZero: true, ticks: { precision: 0 } },
+            y: { grid: { display: false } },
+          },
+        },
+      },
+    },
+    {
+      id: 'riskProfile',
+      config: {
+        type: 'doughnut',
+        data: {
+          labels: riskCounts.map((item) => item.level),
+          datasets: [{
+            data: riskCounts.map((item) => item.count),
+            backgroundColor: [chartPalette.teal, chartPalette.gold, chartPalette.red],
             borderWidth: 0,
           }],
         },
@@ -1880,89 +2099,21 @@ function drawCharts() {
       },
     },
     {
-      id: 'demographics',
+      id: 'analyticsAppointmentStatus',
       config: {
-        type: 'bar',
+        type: 'doughnut',
         data: {
-          labels: ['18-29', '30-39', '40-49', '50-59', '60-69', '70+'],
+          labels: appointmentStatuses,
           datasets: [{
-            label: 'Patients',
-            data: demographicCounts,
-            backgroundColor: [chartPalette.primary, chartPalette.teal, chartPalette.blue, chartPalette.gold, chartPalette.red, chartPalette.slate],
-            borderRadius: 8,
+            data: appointmentStatusCounts,
+            backgroundColor: statusColors,
+            borderWidth: 0,
           }],
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            x: { grid: { display: false } },
-            y: { display: false },
-          },
-        },
-      },
-    },
-    {
-      id: 'analyticsTrend',
-      config: {
-        type: 'line',
-        data: {
-          labels: patientActivity.map((month) => month.label),
-          datasets: [{
-            label: 'Patient activity',
-            data: patientActivity.map((month) => month.count),
-            borderColor: chartPalette.primary,
-            backgroundColor: 'rgba(15, 118, 110, 0.1)',
-            borderWidth: 3,
-            fill: true,
-            tension: 0.35,
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: { x: { grid: { display: false } }, y: { display: false } },
-        },
-      },
-    },
-    {
-      id: 'appointmentsTrend',
-      config: {
-        type: 'bar',
-        data: {
-          labels: weekdayLabels,
-          datasets: [{
-            label: 'Appointments',
-            data: getAppointmentWeekdayCounts(),
-            backgroundColor: chartPalette.teal,
-            borderRadius: 8,
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: { x: { grid: { display: false } }, y: { display: false } },
-        },
-      },
-    },
-    {
-      id: 'demographicBar',
-      config: {
-        type: 'polarArea',
-        data: {
-          labels: ['18-29', '30-39', '40-49', '50-59', '60-69', '70+'],
-          datasets: [{
-            data: demographicCounts,
-            backgroundColor: [chartPalette.primary, chartPalette.teal, chartPalette.blue, chartPalette.gold, chartPalette.red, chartPalette.slate],
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { position: 'right' } },
+          plugins: { legend: { position: 'bottom' } },
         },
       },
     },

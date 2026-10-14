@@ -104,15 +104,21 @@ textarea {
   display: grid;
   grid-template-columns: repeat(2, minmax(130px, 1fr));
   gap: 0.5rem 1rem;
-  min-width: 260px;
+  min-width: 0;
 }
 
 .permission-list label {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 0.4rem;
   color: var(--text-soft);
   font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.permission-list input {
+  flex: 0 0 auto;
 }
 
 .app-shell {
@@ -738,6 +744,86 @@ html[data-theme='dark'] .appointment-card {
 .chart-box {
   position: relative;
   min-height: 200px;
+}
+
+.chart-caption {
+  margin: -0.35rem 0 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.hospital-overview-charts,
+.hospital-analytics-grid {
+  align-items: stretch;
+  margin-top: 1.25rem;
+}
+
+.hospital-overview-charts > .panel,
+.hospital-analytics-grid > .panel {
+  min-width: 0;
+}
+
+.hospital-overview-charts .chart-box,
+.hospital-analytics-grid .chart-box {
+  height: 250px;
+  min-height: 0;
+}
+
+.hospital-overview-charts .chart-box-compact,
+.hospital-analytics-grid .chart-box-compact {
+  height: 250px;
+}
+
+.settings-preference-grid,
+.settings-admin-stack {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.settings-preference-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  align-items: start;
+}
+
+.settings-admin-stack {
+  margin-top: 1.25rem;
+}
+
+.settings-preference-grid > .panel,
+.settings-admin-stack > .panel {
+  min-width: 0;
+}
+
+.settings-account-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.settings-data-table {
+  min-width: 720px;
+}
+
+.settings-preference-grid .metric-row {
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.settings-preference-grid .metric-row > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-preference-grid .metric-row .muted {
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .list {
@@ -1536,7 +1622,8 @@ html[data-theme='dark'] .appointment-card {
   }
 
   .form-grid,
-  .permission-list {
+  .permission-list,
+  .settings-account-form {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1562,6 +1649,46 @@ html[data-theme='dark'] .appointment-card {
 
   .panel {
     padding: 1rem;
+  }
+
+  .settings-preference-grid,
+  .settings-admin-stack {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.9rem;
+  }
+
+  .settings-preference-grid .panel,
+  .settings-admin-stack .panel {
+    padding: 0.9rem;
+  }
+
+  .settings-preference-grid .panel-header,
+  .settings-admin-stack .panel-header {
+    align-items: flex-start;
+  }
+
+  .settings-preference-grid .metric-row {
+    flex-wrap: wrap;
+  }
+
+  .settings-preference-grid .metric-row .muted {
+    width: 100%;
+    text-align: left;
+  }
+
+  .settings-account-form .form-actions {
+    grid-column: 1;
+  }
+
+  .settings-table-wrap .settings-data-table {
+    min-width: 680px;
+  }
+
+  .hospital-overview-charts .chart-box,
+  .hospital-analytics-grid .chart-box,
+  .hospital-overview-charts .chart-box-compact,
+  .hospital-analytics-grid .chart-box-compact {
+    height: 230px;
   }
 
 }
