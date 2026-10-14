@@ -1605,7 +1605,29 @@ function renderTopbar() {
 }
 
 function getChatReply(message) {
-  const query = message.toLowerCase();
+  const query = message.trim().toLowerCase();
+  if (/^(hi|hello|hey|good morning|good afternoon|good evening)\b/.test(query)) {
+    return { text: `Hello, ${state.currentUser?.name || 'there'}! I can help you find dashboard pages, search records, and get started with appointments. What would you like to do?` };
+  }
+  if (/\b(thank|thanks|thank you)\b/.test(query)) {
+    return { text: 'You’re welcome! Ask if you need help finding another page or using the dashboard.' };
+  }
+  if (/\b(help|what can you do|what do you do)\b/.test(query)) {
+    const availablePages = navItems
+      .filter((item) => userCanAccess(item.id))
+      .map((item) => item.label);
+    return { text: `I can help you navigate ${availablePages.join(', ')}, search records, and explain appointment workflows. I cannot provide medical advice or diagnose symptoms.` };
+  }
+  if (/\b(where am i|current page|which page)\b/.test(query)) {
+    const page = navItems.find((item) => item.id === state.currentPage);
+    return { text: `You are viewing ${page?.label || 'the dashboard'}. I can help you open another page or search records.` };
+  }
+  if (/\b(dark mode|light mode|theme)\b/.test(query)) {
+    return { text: `Switching to ${state.theme === 'dark' ? 'light' : 'dark'} mode.`, action: 'theme-toggle', label: 'Switch theme' };
+  }
+  if (/\b(clear|reset)\s+(the\s+)?(chat|conversation)\b/.test(query)) {
+    return { text: 'You can clear this conversation using the Clear chat button above.' };
+  }
   if (/\b(appointment|book|booking|schedule|visit)\b/.test(query)) {
     if (!userCanAccess('appointments')) {
       return { text: 'Your account cannot access appointments. Please ask an administrator to review your page access.' };
@@ -1613,19 +1635,30 @@ function getChatReply(message) {
     const patientSteps = state.currentUser.role === 'patient'
       ? 'Choose “Request appointment”, select a doctor, date, and time, then enter the reason for your visit.'
       : 'Open appointments to review the schedule or choose “New appointment” to create one.';
-    return { text: `${patientSteps} I can take you there.`, action: 'appointments', label: 'Open appointments' };
+    const canCreateAppointment = state.currentUser.role === 'patient'
+      || (state.currentUser.role !== 'doctor' && userCanAccess('add-record'));
+    return {
+      text: `${patientSteps} I can take you there.`,
+      action: canCreateAppointment ? 'book-appointment' : 'appointments',
+      label: canCreateAppointment ? 'Start an appointment' : 'Open appointments',
+    };
+  }
+  if (/\b(search|look up|look for)\b/.test(query) && /\b(record|records|patient|patients|doctor|doctors|staff|name)\b/.test(query)) {
+    return { text: 'Use the global search bar at the top of any page to find records available to your account.', action: 'search', label: 'Focus global search' };
   }
   if (/\b(search|look up)\b/.test(query)) {
-    return { text: 'Use the global search bar at the top of any page to find records available to your account.', action: 'search', label: 'Focus global search' };
+    return { text: 'Type a patient, doctor, staff member, or record name into the global search bar. Results are limited to records your account can access.', action: 'search', label: 'Focus global search' };
   }
 
   const destinations = [
-    { page: 'patients', match: /\b(patient|patients)\b/, label: 'Open patients' },
-    { page: 'doctors', match: /\b(doctor|doctors|physician)\b/, label: 'Open doctors' },
+    { page: 'patients', match: /\b(patient|patients|record|records)\b/, label: 'Open patients' },
+    { page: 'doctors', match: /\b(doctor|doctors|physician|specialty|specialties)\b/, label: 'Open doctors' },
+    { page: 'diseases', match: /\b(disease|diseases|condition|conditions)\b/, label: 'Open conditions' },
     { page: 'staff', match: /\b(staff|employee|employees)\b/, label: 'Open staff' },
     { page: 'analytics', match: /\b(analytics|trend|trends|report|reports)\b/, label: 'Open analytics' },
     { page: 'model-performance', match: /\b(model|performance|accuracy|metrics)\b/, label: 'Open model performance' },
     { page: 'settings', match: /\b(settings|preference|account)\b/, label: 'Open settings' },
+    { page: 'hospital-info', match: /\b(hospital|contact|address|phone|hours)\b/, label: 'Open hospital information' },
     { page: 'overview', match: /\b(home|overview|dashboard)\b/, label: 'Open overview' },
   ];
   const destination = destinations.find((item) => item.match.test(query));
@@ -1636,7 +1669,7 @@ function getChatReply(message) {
     return { text: `Opening ${destination.page.replace('-', ' ')}.`, action: destination.page, label: destination.label };
   }
 
-  return { text: 'I can help with appointments, finding records, or opening pages such as Patients, Doctors, Analytics, and Settings. I cannot provide medical advice; please contact your care team for health questions.' };
+  return { text: 'I can help you navigate pages, search records, and use appointment features. Try “find a doctor”, “search patients”, “book an appointment”, or “what can you do?”. I cannot provide medical advice or diagnose symptoms; please contact your care team for health questions.' };
 }
 
 function renderChatAssistant() {
@@ -1646,21 +1679,29 @@ function renderChatAssistant() {
       ${message.action ? `<button type="button" class="chat-action" data-chat-action="${escapeHtml(message.action)}">${escapeHtml(message.label)}</button>` : ''}
     </div>
   `).join('');
+  const quickPrompts = [
+    { page: 'appointments', prompt: 'How do I book an appointment?', label: 'Book appointment' },
+    { page: 'doctors', prompt: 'Find a doctor', label: 'Find a doctor' },
+    { page: 'patients', prompt: 'Search patient records', label: 'Find patients' },
+    { page: 'analytics', prompt: 'Open analytics', label: 'View analytics' },
+  ].filter((item) => userCanAccess(item.page));
+  quickPrompts.push({ prompt: 'How do I search records?', label: 'Search records' });
 
   return `
     <aside class="chat-assistant" aria-label="TakeCare navigation assistant">
       ${state.chatOpen ? `
-        <section class="chat-panel" aria-label="Chat assistant">
+        <section class="chat-panel" id="chatPanel" aria-label="Chat assistant">
           <header class="chat-header">
-            <div><strong>TakeCare assistant</strong><span>Rule-based page help</span></div>
+            <div><strong>TakeCare assistant</strong><span>Navigation and workflow help</span></div>
+            <button type="button" class="chat-clear" data-action="clear-chat" ${state.chatMessages.length ? '' : 'disabled'}>Clear chat</button>
             <button type="button" class="icon-button" data-action="close-chat" aria-label="Close assistant">×</button>
           </header>
-          <div class="chat-messages" aria-live="polite">
-            ${messages || '<div class="chat-welcome"><strong>What can I help you find?</strong><p>Ask about booking an appointment or opening a dashboard page.</p></div>'}
+          <div class="chat-messages" role="log" aria-live="polite" aria-relevant="additions text">
+            ${messages || '<div class="chat-welcome"><strong>What can I help you find?</strong><p>Ask for a page, search help, or appointment steps. This assistant does not provide medical advice.</p></div>'}
           </div>
           <div class="chat-quick-actions">
-            <button type="button" data-chat-prompt="How do I book an appointment?">Book appointment</button>
-            <button type="button" data-chat-prompt="Find a doctor">Find a doctor</button>
+            ${quickPrompts.map((item) => `<button type="button" data-chat-prompt="${escapeHtml(item.prompt)}">${escapeHtml(item.label)}</button>`).join('')}
+            <button type="button" data-chat-prompt="What can you do?">Help</button>
           </div>
           <form class="chat-form" data-chat-form>
             <input type="text" name="message" placeholder="Ask how to navigate..." aria-label="Ask the assistant" required />
@@ -1668,7 +1709,7 @@ function renderChatAssistant() {
           </form>
         </section>
       ` : ''}
-      <button type="button" class="chat-launcher" data-action="toggle-chat" aria-expanded="${state.chatOpen}">${renderIcon('chat')}<span>${state.chatOpen ? 'Assistant open' : 'Ask TakeCare'}</span></button>
+      <button type="button" class="chat-launcher" data-action="toggle-chat" aria-label="${state.chatOpen ? 'Close TakeCare assistant' : 'Open TakeCare assistant'}" aria-expanded="${state.chatOpen}">${renderIcon('chat')}<span>${state.chatOpen ? 'Assistant open' : 'Ask TakeCare'}</span></button>
     </aside>
   `;
 }
@@ -2022,6 +2063,22 @@ function handleChatAction(action) {
     document.querySelector('#global-search-form [name="query"]')?.focus();
     return;
   }
+  if (action === 'theme-toggle') {
+    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    render();
+    document.querySelector('[data-chat-form] input')?.focus();
+    return;
+  }
+  if (action === 'book-appointment') {
+    state.chatOpen = false;
+    state.recordType = 'appointment';
+    state.appointmentFormOpen = state.currentUser.role === 'patient';
+    state.currentPage = state.currentUser.role === 'patient'
+      ? 'appointments'
+      : userCanAccess('add-record') ? 'add-record' : 'appointments';
+    render();
+    return;
+  }
   if (userCanAccess(action)) {
     state.currentPage = action;
     state.chatOpen = false;
@@ -2050,6 +2107,11 @@ function bindEvents() {
     state.chatOpen = false;
     render();
     document.querySelector('[data-action="toggle-chat"]')?.focus();
+  });
+  document.querySelector('[data-action="clear-chat"]')?.addEventListener('click', () => {
+    state.chatMessages = [];
+    render();
+    document.querySelector('[data-chat-form] input')?.focus();
   });
   document.querySelectorAll('[data-chat-prompt]').forEach((button) => {
     button.addEventListener('click', () => sendChatMessage(button.dataset.chatPrompt || ''));
@@ -2702,6 +2764,12 @@ document.addEventListener('keydown', (event) => {
     state.alertsOpen = false;
     render();
     document.querySelector('[data-action="view-alerts"]')?.focus();
+    return;
+  }
+  if (event.key === 'Escape' && state.chatOpen) {
+    state.chatOpen = false;
+    render();
+    document.querySelector('[data-action="toggle-chat"]')?.focus();
     return;
   }
   if (event.key === 'Escape' && state.sidebarOpen && window.matchMedia('(max-width: 1024px)').matches) {
