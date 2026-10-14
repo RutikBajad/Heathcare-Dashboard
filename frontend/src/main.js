@@ -1580,9 +1580,6 @@ function renderSidebar() {
 function renderTopbar() {
   return `
     <header class="topbar">
-      <button class="icon-button sidebar-toggle" id="sidebarToggle" type="button" aria-label="${state.sidebarOpen ? 'Close navigation menu' : 'Open navigation menu'}" aria-controls="sidebar" aria-expanded="${state.sidebarOpen}">
-        ${renderIcon('menu')}
-      </button>
       <div class="search-area">
         <form class="search-box" id="global-search-form" role="search">
           <span>${renderIcon('search')}</span>
@@ -1742,6 +1739,9 @@ function renderContent() {
 
   return `
     <div class="app-shell ${state.sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}">
+      <button class="icon-button sidebar-toggle" id="sidebarToggle" type="button" aria-label="${state.sidebarOpen ? 'Close navigation menu' : 'Open navigation menu'}" aria-controls="sidebar" aria-expanded="${state.sidebarOpen}">
+        ${renderIcon('menu')}
+      </button>
       ${renderSidebar()}
       <button class="sidebar-backdrop" type="button" aria-label="Close navigation menu" tabindex="-1"></button>
       <div class="main-panel">

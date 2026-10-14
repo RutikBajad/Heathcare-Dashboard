@@ -154,11 +154,7 @@ textarea {
   left: 1rem;
   z-index: 45;
   box-shadow: 0 10px 24px -14px var(--shadow);
-  transition: left 0.25s ease, transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.sidebar-open .sidebar-toggle {
-  left: 296px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .sidebar-toggle svg {
@@ -1230,7 +1226,7 @@ html[data-theme='dark'] .appointment-card {
 .chat-assistant {
   position: fixed;
   right: 1.25rem;
-  bottom: 2.25rem;
+  bottom: 5rem;
   z-index: 40;
   display: grid;
   justify-items: end;
@@ -1392,10 +1388,6 @@ html[data-theme='dark'] .appointment-card {
 }
 
 @media (max-width: 1024px) {
-  .sidebar-open .sidebar-toggle {
-    left: 1rem;
-  }
-
   .sidebar {
     flex: 0 0 min(320px, calc(100vw - 3rem));
   }
@@ -1560,16 +1552,12 @@ html[data-theme='dark'] .appointment-card {
     padding: 1rem;
   }
 
-  .sidebar-toggle {
-    top: 0.75rem;
-    left: 0.75rem;
-  }
 }
 
 @media (max-width: 600px) {
   .chat-assistant {
     right: max(0.75rem, env(safe-area-inset-right));
-    bottom: max(1.5rem, env(safe-area-inset-bottom));
+    bottom: max(4rem, calc(env(safe-area-inset-bottom) + 3rem));
   }
 
   .chat-panel {
