@@ -32,7 +32,7 @@ configured_origins = os.getenv(
 FRONTEND_ORIGINS = {origin.strip().rstrip('/') for origin in configured_origins.split(',') if origin.strip()}
 SESSION_TTL_HOURS = 12
 MIN_PASSWORD_LENGTH = 8
-PATIENT_REGISTRATION_ENABLED = os.getenv('ALLOW_PATIENT_REGISTRATION', 'false').strip().lower() in {
+PATIENT_REGISTRATION_ENABLED = os.getenv('ALLOW_PATIENT_REGISTRATION', 'true').strip().lower() in {
     '1', 'true', 'yes', 'on',
 }
 
@@ -288,8 +288,11 @@ def authenticate_api_request():
     return None
 
 
-def records(collection_name, query=None, limit=100):
-    return list(database[collection_name].find(query or {}, {'_id': 0}).sort('_id', -1).limit(limit))
+def records(collection_name, query=None, limit=None):
+    cursor = database[collection_name].find(query or {}, {'_id': 0}).sort('_id', -1)
+    if limit is not None:
+        cursor = cursor.limit(limit)
+    return list(cursor)
 
 
 def model_performance_data():

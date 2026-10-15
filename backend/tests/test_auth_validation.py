@@ -38,6 +38,27 @@ class AuthValidationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         ensure_database.assert_not_called()
 
+    def test_patient_registration_creates_a_linked_patient_and_account(self):
+        payload = {
+            'name': 'Synthetic Patient',
+            'age': 42,
+            'email': 'patient@example.com',
+            'password': 'synthetic-password',
+        }
+        with patch.object(backend_app, 'PATIENT_REGISTRATION_ENABLED', True):
+            with patch.object(backend_app, 'ensure_database'):
+                with patch.object(backend_app, 'database') as database:
+                    database.accounts.find_one.return_value = None
+                    with patch.object(backend_app, 'create_session', return_value='session-token'):
+                        response = backend_app.app.test_client().post('/api/auth/register', json=payload)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json['token'], 'session-token')
+        patient = database.patients.insert_one.call_args.args[0]
+        account = database.accounts.insert_one.call_args.args[0]
+        self.assertEqual(account['patientId'], patient['id'])
+        self.assertEqual(account['role'], 'patient')
+
     def test_database_check_only_connects_and_does_not_seed_records(self):
         with patch.object(backend_app, 'mongo_client') as mongo_client:
             with patch.object(backend_app, 'database') as database:
@@ -45,6 +66,24 @@ class AuthValidationTests(unittest.TestCase):
 
         mongo_client.admin.command.assert_called_once_with('ping')
         database.assert_not_called()
+
+    def test_records_are_not_truncated_unless_a_limit_is_requested(self):
+        documents = [{'_id': index, 'id': f'PT-{index}'} for index in range(150)]
+
+        class Cursor(list):
+            def sort(self, field, direction):
+                return Cursor(sorted(self, key=lambda record: record[field], reverse=direction < 0))
+
+            def limit(self, value):
+                return Cursor(self[:value])
+
+        with patch.object(backend_app, 'database') as database:
+            database.__getitem__.return_value.find.return_value = Cursor(documents)
+            all_records = backend_app.records('patients')
+            limited_records = backend_app.records('patients', limit=25)
+
+        self.assertEqual(len(all_records), 150)
+        self.assertEqual(len(limited_records), 25)
 
     def test_model_performance_persists_repository_metrics_when_collection_is_empty(self):
         stored_performance = {}
