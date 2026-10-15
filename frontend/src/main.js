@@ -100,15 +100,15 @@ function renderAuthPage() {
         <h1 class="page-title">${isRegister ? 'Create a patient account' : 'Welcome back'}</h1>
         <p class="page-subtitle">${isRegister ? 'Register to request and manage your appointments.' : 'Sign in with your account to continue.'}</p>
         ${state.authError ? `<div class="data-error" role="alert">${escapeHtml(state.authError)}</div>` : ''}
-        <form id="auth-form" class="form-grid auth-form">
+        <form id="auth-form" class="form-grid auth-form" autocomplete="on">
           ${isRegister ? `
             <div class="form-field"><label for="auth-name">Full name</label><input id="auth-name" name="name" autocomplete="name" required /></div>
             <div class="form-field"><label for="auth-age">Age</label><input id="auth-age" name="age" type="number" min="0" max="120" required /></div>
             <div class="form-field"><label for="auth-city">City</label><input id="auth-city" name="city" autocomplete="address-level2" /></div>
             <div class="form-field"><label for="auth-gender">Gender</label><select id="auth-gender" name="gender"><option value="">Select gender</option><option>Female</option><option>Male</option><option>Other</option><option>Prefer not to say</option></select></div>
           ` : ''}
-          <div class="form-field"><label for="auth-email">${isRegister ? 'Email' : 'Account ID'}</label><input id="auth-email" name="email" type="${isRegister ? 'email' : 'text'}" autocomplete="${isRegister ? 'email' : 'username'}" required /></div>
-          <div class="form-field"><label for="auth-password">Password</label><input id="auth-password" name="password" type="password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" ${isRegister ? 'minlength="8"' : ''} required />${isRegister ? '<span class="muted">At least 8 characters.</span>' : ''}</div>
+          <div class="form-field"><label for="auth-email">${isRegister ? 'Email' : 'Account ID'}</label><input id="auth-email" name="email" type="${isRegister ? 'email' : 'text'}" autocomplete="${isRegister ? 'email' : 'username'}" enterkeyhint="next" required /></div>
+          <div class="form-field"><label for="auth-password">Password</label><input id="auth-password" name="password" type="password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" enterkeyhint="go" ${isRegister ? 'minlength="8"' : ''} required />${isRegister ? '<span class="muted">At least 8 characters.</span>' : ''}</div>
           <div class="form-actions" style="grid-column:1/-1;"><button class="primary-button" type="submit">${isRegister ? 'Create patient account' : 'Sign in'}</button></div>
         </form>
         ${patientRegistrationEnabled ? `<p class="auth-switch">${isRegister ? 'Already registered?' : 'New patient?'} <button class="link-button" type="button" data-action="toggle-auth">${isRegister ? 'Sign in' : 'Create an account'}</button></p>` : ''}
@@ -1046,8 +1046,8 @@ function renderAppointments() {
           </select>
         </label>
       </div>
-      <div class="table-wrap">
-        <table class="data-table">
+      <div class="table-wrap appointment-table-wrap">
+        <table class="data-table appointment-table">
           <thead>
             <tr>
               <th>Patient</th>
@@ -1056,7 +1056,7 @@ function renderAppointments() {
               <th>Doctor</th>
               <th>Reason</th>
               <th>Status</th>
-              ${state.currentUser.role === 'doctor' || state.currentUser.role === 'admin' ? '<th>Update status</th>' : ''}
+              ${state.currentUser.role === 'doctor' || state.currentUser.role === 'admin' ? '<th class="appointment-status-column">Update status</th>' : ''}
             </tr>
           </thead>
           <tbody>
@@ -1069,7 +1069,7 @@ function renderAppointments() {
                 <td>${escapeHtml(appointment.reason || 'Consultation')}</td>
                 <td><span class="${getStatusClass(appointment.status)}">${escapeHtml(appointment.status)}</span></td>
                 ${state.currentUser.role === 'doctor' || state.currentUser.role === 'admin' ? `
-                  <td><select data-appointment-status="${escapeHtml(appointment.id)}" aria-label="Update status for ${escapeHtml(appointment.patient)}">
+                  <td class="appointment-status-column"><select data-appointment-status="${escapeHtml(appointment.id)}" aria-label="Update status for ${escapeHtml(appointment.patient)}">
                     ${['Pending', 'Confirmed', 'Completed', 'Rescheduled', 'Cancelled'].map((status) => `<option ${appointment.status === status ? 'selected' : ''}>${status}</option>`).join('')}
                   </select></td>
                 ` : ''}

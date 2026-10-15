@@ -82,6 +82,16 @@ textarea {
   padding: clamp(1.5rem, 5vw, 3rem);
 }
 
+.auth-form .form-actions {
+  width: 100%;
+}
+
+.auth-form .primary-button {
+  width: 100%;
+  min-height: 48px;
+  touch-action: manipulation;
+}
+
 .auth-panel > .page-title {
   margin-top: 2rem;
 }
@@ -917,6 +927,33 @@ html[data-theme='dark'] .appointment-card {
   text-transform: uppercase;
   color: var(--text-soft);
   font-weight: 700;
+}
+
+.appointment-status-column {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  min-width: 10rem;
+  background: var(--card);
+  box-shadow: -0.5rem 0 0.75rem -0.75rem var(--text);
+}
+
+.appointment-table thead .appointment-status-column {
+  z-index: 2;
+}
+
+.appointment-status-column select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+html[data-theme='dark'] .appointment-status-column select {
+  color-scheme: dark;
 }
 
 .badge {
